@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import scanner
 import market_scorer
 import clob_executor
+from scanner import CITIES, _city_is_in_window
 
 load_dotenv()
 
@@ -33,6 +34,7 @@ class BotThread:
         self.status_msg = "Detenido"
         self.last_opportunities: list = []
         self.errors: list = []
+        self._last_capital_sync = 0.0  # timestamp del último sync
 
     # ─── Control ──────────────────────────────────────────────────────────────
 
@@ -42,6 +44,7 @@ class BotThread:
         self._stop_event.clear()
         self.running = True
         self.status_msg = "Iniciando..."
+        self._last_capital_sync = 0.0  # forzar sync inmediato al arrancar
 
         self._scan_thread = threading.Thread(
             target=self._scan_loop, daemon=True, name="scan-loop"
@@ -104,6 +107,9 @@ class BotThread:
         self.status_msg = "Escaneando mercados..."
         log.info(f"Ciclo #{self.portfolio._scan_count} — Escaneando...")
 
+        # Sincronizar capital con saldo real cada hora (o al arrancar)
+        self._maybe_sync_capital()
+
         # Obtener condition_ids ya en portfolio
         tracked = set(
             pos.get("condition_id") for pos in self.portfolio._positions.values()
@@ -119,6 +125,9 @@ class BotThread:
 
         # Limpiar historial antiguo
         market_scorer.purge_old()
+
+        # Cerrar posiciones cuya ventana de ciudad ya expiró
+        self._check_city_windows()
 
         # Filtrar candidatos
         candidates = [o for o in scored if o["score"] >= MIN_SCORE]
@@ -146,3 +155,30 @@ class BotThread:
                     f"  ✅ Posición abierta: {result['pos_id']} "
                     f"— Orden {result['buy_order_id']}"
                 )
+
+    def _maybe_sync_capital(self):
+        """Sincroniza el capital con el saldo real de Polymarket cada hora."""
+        now = time.time()
+        if now - self._last_capital_sync < 3600:
+            return
+        log.info("Sincronizando capital con saldo real de Polymarket...")
+        result = self.portfolio.sync_capital_from_chain()
+        if result["ok"]:
+            log.info(f"  {result['msg']}")
+        else:
+            log.warning(f"  Sync fallido: {result.get('error')}. Usando capital interno.")
+        self._last_capital_sync = now
+
+    def _check_city_windows(self):
+        """Cierra posiciones de ciudades cuya ventana horaria ya expiró"""
+        for city_name, cfg in CITIES.items():
+            if not _city_is_in_window(cfg["utc_offset"], cfg["window"]):
+                # Ver si hay posiciones abiertas de esa ciudad
+                open_in_city = [
+                    pos_id for pos_id, pos in self.portfolio._positions.items()
+                    if pos.get("city") == city_name
+                    and pos.get("status") in ("pending_buy", "in_position", "pending_sell")
+                ]
+                if open_in_city:
+                    log.info(f"  ⏰ Ventana cerrada para {city_name}. Cerrando {len(open_in_city)} posición(es).")
+                    self.portfolio.force_close_city(city_name)

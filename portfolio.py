@@ -39,6 +39,25 @@ class Portfolio:
     def get_capital(self) -> float:
         return self._capital
 
+    def sync_capital_from_chain(self) -> dict:
+        """
+        Consulta el saldo real de USDC en Polymarket y actualiza el capital disponible.
+        El capital = USDC libre en la cuenta (no incluye tokens en posiciones abiertas).
+        Se llama automáticamente cada hora desde el bot.
+        """
+        info = clob_executor.get_wallet_info()
+        if info.get("status") != "ok" or info.get("balance") is None:
+            return {"ok": False, "error": info.get("error", "Sin datos de balance")}
+
+        real_balance = float(info["balance"])
+        with _lock:
+            prev = self._capital
+            self._capital = round(real_balance, 4)
+            db.set_state("capital", str(self._capital))
+
+        log_msg = f"Sync capital: ${prev:.4f} → ${self._capital:.4f} (saldo real Polymarket)"
+        return {"ok": True, "prev": prev, "balance": self._capital, "msg": log_msg}
+
     def _calc_position_size(self, yes_price: float) -> float:
         """Tamaño inverso al precio: más barato = más tokens (más upside)"""
         base_pct = BET_SIZE_MAX_PCT if yes_price < 0.08 else BET_SIZE_MIN_PCT
@@ -108,14 +127,17 @@ class Portfolio:
     def check_fills(self):
         """
         Revisa el estado de todas las órdenes abiertas.
-        Se llama en el hilo de monitoreo.
+        Las llamadas HTTP se hacen FUERA del lock para no bloquear el scan loop.
         """
+        # Snapshot sin lock (solo lectura de IDs)
         with _lock:
-            for pos_id, pos in list(self._positions.items()):
-                try:
-                    self._check_position(pos_id, pos)
-                except Exception:
-                    pass
+            snapshot = list(self._positions.items())
+
+        for pos_id, pos in snapshot:
+            try:
+                self._check_position(pos_id, pos)
+            except Exception:
+                pass
 
     def _check_position(self, pos_id: str, pos: dict):
         status = pos.get("status")
@@ -199,15 +221,27 @@ class Portfolio:
 
     def force_close_city(self, city: str):
         """Cierra todas las posiciones de una ciudad (ventana expiró)"""
-        clob_executor.cancel_all()
         with _lock:
-            for pos_id, pos in list(self._positions.items()):
-                if pos.get("city") == city:
-                    # Intentar vender agresivo (bajo el ask)
-                    cur = pos.get("current_price", pos["entry_price"])
-                    sell_p = round(cur - 0.01, 4)
-                    if sell_p > 0.01:
-                        clob_executor.place_sell(pos["yes_token_id"], sell_p, pos["tokens"])
+            city_positions = {
+                pos_id: pos for pos_id, pos in self._positions.items()
+                if pos.get("city") == city
+            }
+
+        for pos_id, pos in city_positions.items():
+            # Cancelar solo las órdenes de esta posición (no cancel_all global)
+            if pos.get("buy_order_id") and pos.get("status") == "pending_buy":
+                clob_executor.cancel_order(pos["buy_order_id"])
+            if pos.get("sell_order_id"):
+                clob_executor.cancel_order(pos["sell_order_id"])
+
+            # Intentar vender agresivo al precio actual
+            cur = pos.get("current_price", pos["entry_price"])
+            sell_p = round(cur - 0.01, 4)
+            if sell_p > 0.01 and pos.get("status") in ("in_position", "pending_sell"):
+                clob_executor.place_sell(pos["yes_token_id"], sell_p, pos["tokens"])
+
+            with _lock:
+                if pos_id in self._positions:
                     self._close_position(pos_id, pos, "force_close")
 
     # ─── Test trade ───────────────────────────────────────────────────────────
@@ -239,13 +273,22 @@ class Portfolio:
         total_trades = self._wins + self._losses
         win_rate = round(self._wins / total_trades * 100, 1) if total_trades > 0 else 0
 
-        roi = round((self._capital - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100, 2)
+        # Valor estimado de posiciones abiertas (tokens × precio actual)
+        positions_value = sum(
+            pos.get("current_price", pos["entry_price"]) * pos["tokens"]
+            for pos in open_positions
+        )
+        total_portfolio = round(self._capital + positions_value, 4)
+
+        roi = round((total_portfolio - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100, 2)
 
         return {
-            "capital":        round(self._capital, 4),
-            "initial_capital": INITIAL_CAPITAL,
-            "total_pnl":      round(self._total_pnl, 4),
-            "roi_pct":        roi,
+            "capital":          round(self._capital, 4),       # USDC libre disponible
+            "positions_value":  round(positions_value, 4),     # valor estimado de posiciones
+            "total_portfolio":  total_portfolio,               # capital + posiciones
+            "initial_capital":  INITIAL_CAPITAL,
+            "total_pnl":        round(self._total_pnl, 4),
+            "roi_pct":          roi,
             "wins":           self._wins,
             "losses":         self._losses,
             "win_rate":       win_rate,

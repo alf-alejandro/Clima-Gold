@@ -217,9 +217,9 @@
   <!-- KPIs -->
   <div class="grid-4 mb">
     <div class="card">
-      <div class="card-title">Capital Rastreado</div>
+      <div class="card-title">Portfolio Total</div>
       <div class="kpi-value gold" id="kpiCapital">—</div>
-      <div class="kpi-sub">USDC en portfolio</div>
+      <div class="kpi-sub" id="kpiCapitalSub">USDC libre: — · Posiciones: —</div>
     </div>
     <div class="card">
       <div class="card-title">P&amp;L Neto</div>
@@ -471,7 +471,8 @@ function updateHeader(d) {
 
 function updateKPIs(d) {
   const pnl = parseFloat(d.total_pnl || 0);
-  $('kpiCapital').textContent = fmtUSD(d.capital);
+  $('kpiCapital').textContent = fmtUSD(d.total_portfolio ?? d.capital);
+  $('kpiCapitalSub').textContent = `USDC libre: ${fmtUSD(d.capital)} · Posiciones: ${fmtUSD(d.positions_value)}`;
   $('kpiPnl').textContent = fmtUSD(pnl);
   $('kpiPnl').className = `kpi-value ${pnlClass(pnl)}`;
   $('kpiRoi').textContent = `ROI: ${fmtPct(d.roi_pct)}`;
