@@ -1,0 +1,25 @@
+# Credenciales — NUNCA subir
+.env
+*.env
+
+# Base de datos local
+*.db
+*.sqlite
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Logs
+*.log
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db

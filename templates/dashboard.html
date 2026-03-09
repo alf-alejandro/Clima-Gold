@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Clima Gold — Bot de Temperatura</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --surface2: #21262d;
+    --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+    --green: #3fb950; --red: #f85149; --amber: #d29922;
+    --blue: #58a6ff; --gold: #f0c060;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #1a1200 0%, var(--surface) 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  .header h1 { font-size: 22px; font-weight: 700; color: var(--gold); letter-spacing: 1px; }
+  .header .subtitle { color: var(--muted); font-size: 12px; }
+  .badge {
+    padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .badge-running { background: rgba(63,185,80,.15); color: var(--green); border: 1px solid var(--green); }
+  .badge-stopped { background: rgba(248,81,73,.1); color: var(--muted); border: 1px solid var(--border); }
+  .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+           background: var(--green); margin-right: 6px; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* Layout */
+  .main { max-width: 1400px; margin: 0 auto; padding: 20px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media(max-width:900px){ .grid-3,.grid-4{grid-template-columns:1fr 1fr} .grid-2{grid-template-columns:1fr} }
+  @media(max-width:600px){ .grid-3,.grid-4,.grid-2{grid-template-columns:1fr} }
+
+  /* Cards */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px;
+  }
+  .card-title { font-size: 11px; color: var(--muted); text-transform: uppercase;
+                letter-spacing: 1px; margin-bottom: 8px; }
+  .kpi-value { font-size: 26px; font-weight: 700; color: var(--text); }
+  .kpi-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .green { color: var(--green); }
+  .red   { color: var(--red); }
+  .amber { color: var(--amber); }
+  .gold  { color: var(--gold); }
+
+  /* Botones de control */
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 16px 0; }
+  .btn {
+    padding: 9px 18px; border-radius: 8px; border: none; cursor: pointer;
+    font-size: 13px; font-weight: 600; transition: all .15s; letter-spacing: .3px;
+  }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-start  { background: var(--green); color: #000; }
+  .btn-stop   { background: var(--red);   color: #fff; }
+  .btn-gold   { background: var(--gold);  color: #000; }
+  .btn-blue   { background: var(--blue);  color: #000; }
+  .btn-outline{ background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .btn:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-1px); }
+
+  /* Panel de capital */
+  .balance-panel {
+    background: linear-gradient(135deg, #1c1500, var(--surface));
+    border: 1px solid var(--amber);
+    border-radius: 10px; padding: 16px; margin-bottom: 16px;
+  }
+  .balance-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .balance-value { font-size: 32px; font-weight: 700; color: var(--gold); }
+  .balance-label { font-size: 12px; color: var(--muted); }
+
+  /* Sección de prueba */
+  .test-panel {
+    background: var(--surface2); border: 1px solid var(--blue);
+    border-radius: 10px; padding: 16px; margin-bottom: 16px;
+  }
+  .test-result {
+    margin-top: 12px; padding: 10px; border-radius: 6px; font-size: 13px;
+    font-family: monospace; white-space: pre-wrap; display: none;
+  }
+  .test-result.ok  { background: rgba(63,185,80,.1); border: 1px solid var(--green); color: var(--green); }
+  .test-result.err { background: rgba(248,81,73,.1);  border: 1px solid var(--red);   color: var(--red); }
+
+  /* Spinner */
+  .spinner { display:none; width:16px;height:16px;border:2px solid var(--border);
+             border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;
+             vertical-align:middle;margin-left:8px; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+
+  /* Status bar */
+  .status-bar {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px; margin-bottom: 16px;
+    font-size: 12px; color: var(--muted);
+    display: flex; gap: 20px; flex-wrap: wrap;
+  }
+
+  /* Tablas */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { color: var(--muted); font-weight: 600; padding: 8px 10px; text-align: left;
+       border-bottom: 1px solid var(--border); text-transform: uppercase; font-size: 10px; letter-spacing: .8px; }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,.02); }
+
+  /* Progress bar */
+  .progress-wrap { background: var(--border); border-radius: 4px; height: 5px; min-width: 60px; }
+  .progress-fill { height: 100%; border-radius: 4px; background: var(--gold); transition: width .5s; }
+
+  /* Status pills */
+  .pill { padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; }
+  .pill-pending { background: rgba(210,153,34,.15); color: var(--amber); }
+  .pill-active  { background: rgba(63,185,80,.15);  color: var(--green); }
+  .pill-won     { background: rgba(88,166,255,.15); color: var(--blue);  }
+  .pill-lost    { background: rgba(248,81,73,.15);  color: var(--red);   }
+  .pill-force   { background: rgba(139,148,158,.15);color: var(--muted); }
+
+  /* Chart */
+  .chart-wrap { position: relative; height: 200px; }
+
+  /* Section header */
+  .section-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .section-title { font-size: 14px; font-weight: 600; color: var(--text); }
+  .count-badge { background: var(--surface2); border: 1px solid var(--border);
+                 color: var(--muted); padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+
+  .empty { text-align: center; color: var(--muted); padding: 24px; font-size: 12px; }
+  .mt { margin-top: 16px; }
+  .mb { margin-bottom: 16px; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div>
+    <h1>⚡ CLIMA GOLD</h1>
+    <div class="subtitle">Bot de Temperatura — Polymarket · 6 Ciudades Globales</div>
+  </div>
+  <span id="botBadge" class="badge badge-stopped">⏹ Detenido</span>
+  <span id="statusMsg" style="color:var(--muted);font-size:12px;">—</span>
+  <div style="margin-left:auto;color:var(--muted);font-size:11px;" id="lastUpdate">—</div>
+</div>
+
+<div class="main">
+
+  <!-- PANEL DE CAPITAL REAL -->
+  <div class="balance-panel">
+    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">
+      💰 Capital Real en Polymarket
+    </div>
+    <div class="balance-row">
+      <div>
+        <div class="balance-value" id="realBalance">—</div>
+        <div class="balance-label" id="balanceLabel">USDC disponible en tu cuenta</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button class="btn btn-gold" onclick="checkBalance()">
+          🔍 Ver mi Capital
+          <span class="spinner" id="spinBalance"></span>
+        </button>
+        <div style="font-size:10px;color:var(--muted)" id="balanceNote"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL DE PRUEBA -->
+  <div class="test-panel">
+    <div style="font-size:11px;color:var(--blue);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">
+      🧪 Prueba de Ejecución — Antes de Iniciar el Bot
+    </div>
+    <div style="color:var(--muted);font-size:12px;margin-bottom:12px;">
+      Coloca una orden real de $1 para verificar que la conexión con Polymarket funciona correctamente.
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <button class="btn btn-blue" onclick="runTestTrade()">
+        🎯 Prueba con $1
+        <span class="spinner" id="spinTest"></span>
+      </button>
+      <span style="color:var(--muted);font-size:11px;">
+        ← Verifica esto antes de presionar "Iniciar Bot"
+      </span>
+    </div>
+    <div class="test-result" id="testResult"></div>
+  </div>
+
+  <!-- CONTROLES DEL BOT -->
+  <div class="controls">
+    <button class="btn btn-start" id="btnStart" onclick="startBot()">▶ Iniciar Bot</button>
+    <button class="btn btn-stop"  id="btnStop"  onclick="stopBot()" disabled>⏹ Detener Bot</button>
+    <button class="btn btn-outline" onclick="cancelAllOrders()" title="Cancela todas las órdenes límite abiertas sin cerrar posiciones">
+      🗑 Cancelar Órdenes
+    </button>
+    <button class="btn" style="background:rgba(248,81,73,.2);color:var(--red);border:1px solid var(--red);"
+            onclick="panicStop()" title="PÁNICO: Detiene el bot y cierra todas las posiciones">
+      🚨 PÁNICO
+    </button>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="status-bar">
+    <span>📊 Capital rastreado: <strong id="statCapital">—</strong></span>
+    <span>📈 P&amp;L Total: <strong id="statPnl">—</strong></span>
+    <span>🏆 Win Rate: <strong id="statWinRate">—</strong></span>
+    <span>📁 Posiciones: <strong id="statOpen">—</strong> abiertas</span>
+    <span>🔄 Escaneos: <strong id="statScans">—</strong></span>
+    <span>⏱ Último scan: <strong id="statLastScan">—</strong></span>
+  </div>
+
+  <!-- KPIs -->
+  <div class="grid-4 mb">
+    <div class="card">
+      <div class="card-title">Capital Rastreado</div>
+      <div class="kpi-value gold" id="kpiCapital">—</div>
+      <div class="kpi-sub">USDC en portfolio</div>
+    </div>
+    <div class="card">
+      <div class="card-title">P&amp;L Neto</div>
+      <div class="kpi-value" id="kpiPnl">—</div>
+      <div class="kpi-sub" id="kpiRoi">ROI: —</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Win Rate</div>
+      <div class="kpi-value" id="kpiWinRate">—</div>
+      <div class="kpi-sub" id="kpiWL">W/L: —</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Posiciones Abiertas</div>
+      <div class="kpi-value" id="kpiOpen">—</div>
+      <div class="kpi-sub">de 20 máximo</div>
+    </div>
+  </div>
+
+  <!-- CHART + OPORTUNIDADES -->
+  <div class="grid-2 mb">
+    <div class="card">
+      <div class="section-header">
+        <div class="section-title">📈 Evolución del Capital</div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="capitalChart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-header">
+        <div class="section-title">🌡 Oportunidades Detectadas</div>
+        <span class="count-badge" id="oppCount">0</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Ciudad</th><th>Precio YES</th><th>Score</th><th>Volumen</th>
+          </tr>
+        </thead>
+        <tbody id="oppTable">
+          <tr><td colspan="4" class="empty">Sin datos aún</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- POSICIONES ABIERTAS -->
+  <div class="card mb">
+    <div class="section-header">
+      <div class="section-title">📂 Posiciones Abiertas</div>
+      <span class="count-badge" id="openCount">0</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Ciudad</th><th>Entrada</th><th>Precio Actual</th>
+          <th>Tokens</th><th>USDC Invertido</th><th>Progreso TP</th><th>Estado</th>
+        </tr>
+      </thead>
+      <tbody id="openTable">
+        <tr><td colspan="8" class="empty">Sin posiciones abiertas</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- HISTORIAL CERRADAS -->
+  <div class="card mb">
+    <div class="section-header">
+      <div class="section-title">📋 Historial de Trades</div>
+      <span class="count-badge" id="closedCount">0</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Ciudad</th><th>Entrada</th><th>Salida</th>
+          <th>P&amp;L</th><th>Resultado</th><th>Fecha</th>
+        </tr>
+      </thead>
+      <tbody id="closedTable">
+        <tr><td colspan="6" class="empty">Sin trades cerrados</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ERRORES -->
+  <div class="card" id="errorSection" style="display:none">
+    <div class="section-title" style="color:var(--red);margin-bottom:8px;">⚠️ Errores Recientes</div>
+    <div id="errorList" style="font-family:monospace;font-size:11px;color:var(--red)"></div>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+// ─── Chart ───────────────────────────────────────────────────────────────────
+const ctx = document.getElementById('capitalChart').getContext('2d');
+let capitalChart = new Chart(ctx, {
+  type: 'line',
+  data: { labels: [], datasets: [{
+    data: [], borderColor: '#f0c060', backgroundColor: 'rgba(240,192,96,.08)',
+    borderWidth: 2, fill: true, tension: 0.4, pointRadius: 2, pointHoverRadius: 4,
+  }]},
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: {
+      callbacks: { label: c => ` $${c.parsed.y.toFixed(2)} USDC` }
+    }},
+    scales: {
+      x: { ticks: { color:'#8b949e', maxTicksLimit:5, font:{size:10} }, grid: { color:'#21262d' } },
+      y: { ticks: { color:'#8b949e', callback: v=>`$${v}` }, grid: { color:'#21262d' } }
+    }
+  }
+});
+
+// ─── Utils ───────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const fmtUSD = n => n !== null && n !== undefined ? `$${parseFloat(n).toFixed(4)}` : '—';
+const fmtPct = n => n !== null && n !== undefined ? `${parseFloat(n).toFixed(2)}%` : '—';
+const fmtTS  = s => s ? new Date(s).toLocaleTimeString('es', {hour:'2-digit',minute:'2-digit'}) : '—';
+
+function pnlClass(v) { return v > 0 ? 'green' : v < 0 ? 'red' : ''; }
+
+function statusPill(s) {
+  const map = {
+    pending_buy:  ['⏳ Comprando',   'pill-pending'],
+    in_position:  ['✅ Activo',      'pill-active'],
+    pending_sell: ['🎯 Vendiendo',   'pill-active'],
+    take_profit:  ['💰 Take Profit', 'pill-won'],
+    won:          ['🏆 Ganado',      'pill-won'],
+    lost:         ['❌ Perdido',     'pill-lost'],
+    force_close:  ['🔴 Forzado',     'pill-force'],
+  };
+  const [label, cls] = map[s] || [s, 'pill-pending'];
+  return `<span class="pill ${cls}">${label}</span>`;
+}
+
+// ─── Check balance ────────────────────────────────────────────────────────────
+async function checkBalance() {
+  $('spinBalance').style.display = 'inline-block';
+  $('realBalance').textContent = '...';
+  try {
+    const r = await fetch('/api/balance').then(r=>r.json());
+    if (r.status === 'error') {
+      $('realBalance').textContent = 'Error';
+      $('balanceLabel').textContent = r.error;
+    } else {
+      const bal = r.balance !== null ? `$${parseFloat(r.balance).toFixed(2)}` : '—';
+      $('realBalance').textContent = bal;
+      $('balanceLabel').textContent = 'USDC en tu bóveda de Polymarket';
+      $('balanceNote').textContent = `Allowance: ${r.allowance}`;
+    }
+  } catch(e) {
+    $('realBalance').textContent = 'Error de red';
+  }
+  $('spinBalance').style.display = 'none';
+}
+
+// ─── Test trade ───────────────────────────────────────────────────────────────
+async function runTestTrade() {
+  const btn = event.target;
+  $('spinTest').style.display = 'inline-block';
+  btn.disabled = true;
+  const el = $('testResult');
+  el.textContent = 'Buscando mercado y colocando orden...';
+  el.className = 'test-result ok';
+  el.style.display = 'block';
+
+  try {
+    const r = await fetch('/api/test_trade', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({amount:1.0})
+    }).then(r=>r.json());
+
+    if (r.status === 'ok') {
+      el.className = 'test-result ok';
+      el.textContent = `✅ PRUEBA EXITOSA — El bot está conectado y puede operar.
+
+🏙  Mercado: ${r.market}
+🆔 Order ID: ${r.order_id}
+💰 Precio:   ${r.price} YES
+🪙 Tokens:   ${r.size_tokens}
+💵 Costo:    $${r.cost_usdc} USDC
+
+La orden quedó activa en Polymarket. Puedes verla en tu cuenta.
+Ahora puedes presionar "Iniciar Bot" con confianza.`;
+    } else if (r.status === 'no_market') {
+      el.className = 'test-result err';
+      el.textContent = `⚠️ ${r.message}`;
+    } else {
+      el.className = 'test-result err';
+      el.textContent = `❌ Error: ${r.error || JSON.stringify(r)}`;
+    }
+  } catch(e) {
+    el.className = 'test-result err';
+    el.textContent = `❌ Error de red: ${e.message}`;
+  }
+  $('spinTest').style.display = 'none';
+  btn.disabled = false;
+}
+
+// ─── Bot control ─────────────────────────────────────────────────────────────
+async function startBot() {
+  const r = await fetch('/api/bot/start', {method:'POST'}).then(r=>r.json());
+  console.log(r.message);
+}
+async function stopBot() {
+  if (!confirm('¿Detener el bot? Se cancelarán las órdenes límite activas.')) return;
+  const r = await fetch('/api/bot/stop', {method:'POST'}).then(r=>r.json());
+  console.log(r.message);
+}
+async function panicStop() {
+  if (!confirm('🚨 PÁNICO: ¿Detener el bot y cerrar TODAS las posiciones al precio actual?')) return;
+  const r = await fetch('/api/bot/panic', {method:'POST'}).then(r=>r.json());
+  alert(r.message);
+}
+async function cancelAllOrders() {
+  if (!confirm('¿Cancelar todas las órdenes límite? (No cierra posiciones ya compradas)')) return;
+  const r = await fetch('/api/cancel_all', {method:'POST'}).then(r=>r.json());
+  alert(r.ok ? '✅ Órdenes canceladas.' : '❌ Error al cancelar.');
+}
+
+// ─── Main refresh ─────────────────────────────────────────────────────────────
+async function refresh() {
+  try {
+    const d = await fetch('/api/status').then(r=>r.json());
+    updateHeader(d);
+    updateKPIs(d);
+    updateChart(d.capital_history || []);
+    updateOpportunities(d.opportunities || []);
+    updateOpenPositions(d.open_positions || []);
+    updateClosedPositions(d.closed_positions || []);
+    updateErrors(d.errors || []);
+    $('lastUpdate').textContent = 'Actualizado: ' + new Date().toLocaleTimeString();
+  } catch(e) {
+    console.error('Error al actualizar:', e);
+  }
+}
+
+function updateHeader(d) {
+  const running = d.bot_running;
+  $('botBadge').className = `badge ${running ? 'badge-running' : 'badge-stopped'}`;
+  $('botBadge').innerHTML = running
+    ? '<span class="pulse"></span>Activo'
+    : '⏹ Detenido';
+  $('statusMsg').textContent = d.bot_status || '—';
+  $('btnStart').disabled = running;
+  $('btnStop').disabled  = !running;
+}
+
+function updateKPIs(d) {
+  const pnl = parseFloat(d.total_pnl || 0);
+  $('kpiCapital').textContent = fmtUSD(d.capital);
+  $('kpiPnl').textContent = fmtUSD(pnl);
+  $('kpiPnl').className = `kpi-value ${pnlClass(pnl)}`;
+  $('kpiRoi').textContent = `ROI: ${fmtPct(d.roi_pct)}`;
+  $('kpiWinRate').textContent = `${d.win_rate || 0}%`;
+  $('kpiWL').textContent = `W/L: ${d.wins || 0} / ${d.losses || 0}`;
+  $('kpiOpen').textContent = d.open_count || 0;
+  // status bar
+  $('statCapital').textContent = fmtUSD(d.capital);
+  $('statPnl').textContent = fmtUSD(pnl);
+  $('statPnl').className = pnlClass(pnl);
+  $('statWinRate').textContent = `${d.win_rate || 0}%`;
+  $('statOpen').textContent = d.open_count || 0;
+  $('statScans').textContent = d.scan_count || 0;
+  $('statLastScan').textContent = fmtTS(d.last_scan);
+}
+
+function updateChart(history) {
+  if (!history.length) return;
+  const labels = history.map(h => fmtTS(h.ts));
+  const data   = history.map(h => h.capital);
+  capitalChart.data.labels = labels;
+  capitalChart.data.datasets[0].data = data;
+  capitalChart.update('none');
+}
+
+function updateOpportunities(opps) {
+  $('oppCount').textContent = opps.length;
+  const tb = $('oppTable');
+  if (!opps.length) {
+    tb.innerHTML = '<tr><td colspan="4" class="empty">Sin oportunidades detectadas</td></tr>';
+    return;
+  }
+  tb.innerHTML = opps.map(o => `
+    <tr>
+      <td>🏙 ${o.city}</td>
+      <td class="${o.yes_price < 0.08 ? 'green' : 'amber'}">${o.yes_price.toFixed(4)}</td>
+      <td><strong style="color:${o.score>=70?'#3fb950':o.score>=60?'#d29922':'#8b949e'}">${o.score}</strong></td>
+      <td>${(o.volume||0).toLocaleString()}</td>
+    </tr>
+  `).join('');
+}
+
+function updateOpenPositions(positions) {
+  $('openCount').textContent = positions.length;
+  const tb = $('openTable');
+  if (!positions.length) {
+    tb.innerHTML = '<tr><td colspan="8" class="empty">Sin posiciones abiertas</td></tr>';
+    return;
+  }
+  tb.innerHTML = positions.map(p => {
+    const tp = 0.15;
+    const pct = Math.min(100, Math.round(((p.current_price||p.entry_price) - p.entry_price) / (tp - p.entry_price) * 100));
+    const cur = p.current_price || p.entry_price;
+    const diff = cur - p.entry_price;
+    return `
+      <tr>
+        <td style="font-family:monospace;font-size:11px">${p.pos_id}</td>
+        <td>🏙 ${p.city}</td>
+        <td>${p.entry_price.toFixed(4)}</td>
+        <td class="${diff>0?'green':diff<0?'red':''}">${cur.toFixed(4)}</td>
+        <td>${p.tokens.toFixed(1)}</td>
+        <td>${fmtUSD(p.amount_usdc)}</td>
+        <td>
+          <div class="progress-wrap">
+            <div class="progress-fill" style="width:${Math.max(0,pct)}%"></div>
+          </div>
+          <span style="font-size:10px;color:var(--muted)">${pct}%</span>
+        </td>
+        <td>${statusPill(p.status)}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function updateClosedPositions(positions) {
+  $('closedCount').textContent = positions.length;
+  const tb = $('closedTable');
+  if (!positions.length) {
+    tb.innerHTML = '<tr><td colspan="6" class="empty">Sin trades cerrados</td></tr>';
+    return;
+  }
+  tb.innerHTML = positions.slice(0,20).map(p => {
+    const pnl = p.pnl || 0;
+    return `
+      <tr>
+        <td>🏙 ${p.city}</td>
+        <td>${(p.entry_price||0).toFixed(4)}</td>
+        <td>${(p.exit_price||0).toFixed(4)}</td>
+        <td class="${pnlClass(pnl)}">${fmtUSD(pnl)}</td>
+        <td>${statusPill(p.reason)}</td>
+        <td style="color:var(--muted)">${fmtTS(p.closed_at)}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function updateErrors(errors) {
+  const sec = $('errorSection');
+  if (!errors.length) { sec.style.display='none'; return; }
+  sec.style.display = 'block';
+  $('errorList').innerHTML = errors.map(e=>`<div>• ${e}</div>`).join('');
+}
+
+// ─── Inicio ───────────────────────────────────────────────────────────────────
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
