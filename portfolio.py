@@ -1,204 +1,236 @@
 """
 portfolio.py — Gestión de posiciones con ejecución real en el CLOB
+Sizing y región idénticos a clima-v2. Capital se sincroniza desde Polymarket cada hora.
 """
-import os
 import uuid
 import threading
-import time
+import logging
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 import db
 import clob_executor
+from config import (
+    INITIAL_CAPITAL, TAKE_PROFIT_YES,
+    POSITION_SIZE_MIN, POSITION_SIZE_MAX,
+    MIN_YES_PRICE, MAX_YES_PRICE,
+    MAX_POSITIONS, MAX_REGION_EXPOSURE, REGION_MAP,
+)
 
 load_dotenv()
+log  = logging.getLogger(__name__)
+lock = threading.Lock()
 
-INITIAL_CAPITAL  = float(os.getenv("INITIAL_CAPITAL", "100.0"))
-TAKE_PROFIT      = float(os.getenv("TAKE_PROFIT", "0.15"))
-BET_SIZE_MIN_PCT = float(os.getenv("BET_SIZE_MIN_PCT", "0.02"))
-BET_SIZE_MAX_PCT = float(os.getenv("BET_SIZE_MAX_PCT", "0.03"))
-MAX_POSITIONS    = int(os.getenv("MAX_POSITIONS", "20"))
-MIN_POSITION_USD = 1.00  # mínimo absoluto en USDC
 
-_lock = threading.Lock()
+def calc_position_size(capital_disponible: float, yes_price: float) -> float:
+    """
+    Interpolación lineal idéntica a clima-v2:
+      YES=0.06  → 3.0% del capital  (más barato → más tokens → más upside)
+      YES=0.115 → 2.0% del capital
+    """
+    price_range = MAX_YES_PRICE - MIN_YES_PRICE
+    if price_range <= 0:
+        pct = POSITION_SIZE_MAX
+    else:
+        t   = (MAX_YES_PRICE - yes_price) / price_range
+        t   = max(0.0, min(1.0, t))
+        pct = POSITION_SIZE_MIN + t * (POSITION_SIZE_MAX - POSITION_SIZE_MIN)
+    return capital_disponible * pct
 
 
 class Portfolio:
     def __init__(self):
         db.init_db()
-        self._positions: dict = db.load_open_positions()
-        self._capital = float(db.get_state("capital") or INITIAL_CAPITAL)
-        self._wins = int(db.get_state("wins") or 0)
-        self._losses = int(db.get_state("losses") or 0)
-        self._total_pnl = float(db.get_state("total_pnl") or 0.0)
-        self._scan_count = 0
-        self._last_scan = None
+        self._positions: dict    = db.load_open_positions()
+        self._closed:    list    = db.load_closed_positions(500)
+        self._capital            = float(db.get_state("capital") or INITIAL_CAPITAL)
+        self._initial_capital    = INITIAL_CAPITAL
+        self._wins               = int(db.get_state("wins")      or 0)
+        self._losses             = int(db.get_state("losses")    or 0)
+        self._total_pnl          = float(db.get_state("total_pnl") or 0.0)
+        self._scan_count         = 0
+        self._last_scan          = None
 
-    # ─── Capital ──────────────────────────────────────────────────────────────
+    # ── Acceso al lock (bot.py lo usa directamente como en v2) ───────────────
 
-    def get_capital(self) -> float:
+    @property
+    def lock(self):
+        return lock
+
+    @property
+    def positions(self):
+        return self._positions
+
+    @property
+    def closed_positions(self):
+        return self._closed
+
+    @property
+    def capital_disponible(self):
         return self._capital
 
-    def sync_capital_from_chain(self) -> dict:
+    # ── Constraints ───────────────────────────────────────────────────────────
+
+    def can_open_position(self) -> bool:
+        return len(self._positions) < MAX_POSITIONS and self._capital >= 0.50
+
+    def region_has_capacity(self, city: str) -> bool:
+        """Máximo MAX_REGION_EXPOSURE (25%) del capital total por región."""
+        region = REGION_MAP.get(city)
+        if not region:
+            return True
+        allocated = sum(
+            pos.get("allocated", 0)
+            for pos in self._positions.values()
+            if REGION_MAP.get(pos.get("city", "")) == region
+        )
+        capital_total = self._capital + sum(
+            pos.get("allocated", 0) for pos in self._positions.values()
+        )
+        return allocated < capital_total * MAX_REGION_EXPOSURE
+
+    # ── Abrir posición (orden real en CLOB) ───────────────────────────────────
+
+    def open_position(self, opportunity: dict, amount: float) -> dict | None:
         """
-        Consulta el saldo real de USDC en Polymarket y actualiza el capital disponible.
-        El capital = USDC libre en la cuenta (no incluye tokens en posiciones abiertas).
-        Se llama automáticamente cada hora desde el bot.
+        Coloca orden real de compra en el CLOB y registra la posición.
+        El amount viene calculado externamente (idéntico a cómo lo hace v2).
         """
-        info = clob_executor.get_wallet_info()
-        if info.get("status") != "ok" or info.get("balance") is None:
-            return {"ok": False, "error": info.get("error", "Sin datos de balance")}
+        price = opportunity["yes_price"]
 
-        real_balance = float(info["balance"])
-        with _lock:
-            prev = self._capital
-            self._capital = round(real_balance, 4)
-            db.set_state("capital", str(self._capital))
+        # Precio más actualizado del CLOB (1 tick sobre best ask)
+        clob_price = clob_executor.get_best_ask(opportunity["yes_token_id"])
+        if clob_price and 0.03 <= clob_price <= 0.50:
+            price = round(clob_price + 0.001, 4)
+        else:
+            price = round(price + 0.001, 4)
 
-        log_msg = f"Sync capital: ${prev:.4f} → ${self._capital:.4f} (saldo real Polymarket)"
-        return {"ok": True, "prev": prev, "balance": self._capital, "msg": log_msg}
+        result = clob_executor.place_buy(
+            token_id=opportunity["yes_token_id"],
+            price=price,
+            amount_usdc=amount,
+        )
 
-    def _calc_position_size(self, yes_price: float) -> float:
-        """Tamaño inverso al precio: más barato = más tokens (más upside)"""
-        base_pct = BET_SIZE_MAX_PCT if yes_price < 0.08 else BET_SIZE_MIN_PCT
-        amount = self._capital * base_pct
-        return max(amount, MIN_POSITION_USD)
+        if result["status"] == "error":
+            log.warning("Error al abrir posición: %s", result["error"])
+            return None
 
-    def can_open(self) -> bool:
-        return len(self._positions) < MAX_POSITIONS and self._capital >= MIN_POSITION_USD
+        pos_id = str(uuid.uuid4())[:8]
+        pos = {
+            "pos_id":        pos_id,
+            "city":          opportunity.get("city", ""),
+            "question":      opportunity.get("question", ""),
+            "condition_id":  opportunity["condition_id"],
+            "yes_token_id":  opportunity["yes_token_id"],
+            "slug":          opportunity.get("slug", ""),
+            "entry_yes":     price,
+            "current_yes":   price,
+            "allocated":     result["cost_usdc"],
+            "tokens":        result["size_tokens"],
+            "buy_order_id":  result["order_id"],
+            "sell_order_id": None,
+            "status":        "pending_buy",
+            "score":         opportunity.get("score", 0),
+            "zone":          opportunity.get("zone", "-"),
+            "opened_at":     datetime.now(timezone.utc).isoformat(),
+        }
 
-    # ─── Abrir posición (orden real) ──────────────────────────────────────────
+        self._positions[pos_id] = pos
+        self._capital = round(self._capital - result["cost_usdc"], 4)
+        db.upsert_open(pos_id, pos)
+        db.set_state("capital", str(self._capital))
+        return pos
 
-    def open_position(self, opportunity: dict) -> dict | None:
-        """
-        Coloca una orden real de compra en el CLOB y registra la posición.
-        Retorna el dict de posición o None si falla.
-        """
-        with _lock:
-            if not self.can_open():
-                return None
+    # ── Monitoreo de órdenes y precios ────────────────────────────────────────
 
-            amount = min(self._calc_position_size(opportunity["yes_price"]), self._capital)
-            price  = opportunity["yes_price"]
+    def apply_price_updates(self, price_map: dict):
+        """Aplica actualizaciones de precio y ejecuta exits automáticos."""
+        for pos_id, pos in list(self._positions.items()):
+            cid = pos.get("condition_id") or pos_id
+            if cid not in price_map:
+                continue
 
-            # Intentar obtener precio más actualizado del CLOB
-            clob_price = clob_executor.get_best_ask(opportunity["yes_token_id"])
-            if clob_price and 0.03 <= clob_price <= 0.50:
-                price = round(clob_price + 0.001, 4)  # 1 tick sobre el best ask
-            else:
-                price = round(price + 0.001, 4)
-
-            result = clob_executor.place_buy(
-                token_id=opportunity["yes_token_id"],
-                price=price,
-                amount_usdc=amount,
-            )
-
-            if result["status"] == "error":
-                return {"error": result["error"]}
-
-            pos_id = str(uuid.uuid4())[:8]
-            pos = {
-                "pos_id":        pos_id,
-                "city":          opportunity.get("city", "?"),
-                "question":      opportunity.get("question", ""),
-                "condition_id":  opportunity["condition_id"],
-                "yes_token_id":  opportunity["yes_token_id"],
-                "entry_price":   price,
-                "amount_usdc":   result["cost_usdc"],
-                "tokens":        result["size_tokens"],
-                "buy_order_id":  result["order_id"],
-                "sell_order_id": None,
-                "status":        "pending_buy",  # → in_position → pending_sell → closed
-                "current_price": price,
-                "score":         opportunity.get("score", 0),
-                "opened_at":     datetime.now(timezone.utc).isoformat(),
-            }
-
-            self._positions[pos_id] = pos
-            self._capital = round(self._capital - result["cost_usdc"], 4)
+            yes_p, no_p = price_map[cid]
+            old = pos.get("current_yes", pos["entry_yes"])
+            pos["current_yes"] = yes_p
             db.upsert_open(pos_id, pos)
-            db.set_state("capital", str(self._capital))
 
-            return pos
+            # Exits automáticos (idénticos a clima-v2)
+            if yes_p >= 0.99:
+                pnl = round(pos["tokens"] * yes_p - pos["allocated"], 4)
+                self._close_position(pos_id, "WON", pnl,
+                    resolution=f"YES resuelto ≥0.99 @ {yes_p:.4f}")
 
-    # ─── Monitoreo de órdenes ─────────────────────────────────────────────────
+            elif (no_p is not None and no_p >= 0.99) or yes_p <= 0.01:
+                pnl = round(pos["tokens"] * yes_p - pos["allocated"], 4)
+                self._close_position(pos_id, "LOST", pnl,
+                    resolution=f"NO resuelto ≥0.99 @ {yes_p:.4f}")
+
+            elif yes_p >= TAKE_PROFIT_YES:
+                pnl = round(pos["tokens"] * yes_p - pos["allocated"], 4)
+                self._close_position(pos_id, "TAKE_PROFIT", pnl,
+                    resolution=f"Take profit @ {yes_p:.4f}")
 
     def check_fills(self):
         """
-        Revisa el estado de todas las órdenes abiertas.
-        Las llamadas HTTP se hacen FUERA del lock para no bloquear el scan loop.
+        Monitorea fills de órdenes BUY pendientes.
+        HTTP fuera del lock para no bloquear el scan loop.
         """
-        # Snapshot sin lock (solo lectura de IDs)
-        with _lock:
+        with lock:
             snapshot = list(self._positions.items())
 
         for pos_id, pos in snapshot:
+            if pos.get("status") != "pending_buy":
+                continue
             try:
-                self._check_position(pos_id, pos)
+                order = clob_executor.get_order_status(pos["buy_order_id"])
+                if order.get("status") in ("FILLED", "MATCHED"):
+                    with lock:
+                        if pos_id in self._positions:
+                            self._positions[pos_id]["status"] = "in_position"
+                            db.upsert_open(pos_id, self._positions[pos_id])
+                            # Colocar orden de venta al take profit
+                            sell = clob_executor.place_sell(
+                                token_id=pos["yes_token_id"],
+                                price=TAKE_PROFIT_YES,
+                                size_tokens=pos["tokens"],
+                            )
+                            if sell["status"] == "ok":
+                                self._positions[pos_id]["sell_order_id"] = sell["order_id"]
+                                self._positions[pos_id]["status"] = "pending_sell"
+                                db.upsert_open(pos_id, self._positions[pos_id])
             except Exception:
                 pass
 
-    def _check_position(self, pos_id: str, pos: dict):
-        status = pos.get("status")
+    # ── Cierre de posición ────────────────────────────────────────────────────
 
-        if status == "pending_buy":
-            order = clob_executor.get_order_status(pos["buy_order_id"])
-            order_status = order.get("status", "")
-            if order_status in ("FILLED", "MATCHED"):
-                pos["status"] = "in_position"
-                # Colocar orden de venta al take profit
-                sell = clob_executor.place_sell(
-                    token_id=pos["yes_token_id"],
-                    price=TAKE_PROFIT,
-                    size_tokens=pos["tokens"],
-                )
-                if sell["status"] == "ok":
-                    pos["sell_order_id"] = sell["order_id"]
-                    pos["status"] = "pending_sell"
-                db.upsert_open(pos_id, pos)
+    def _close_position(self, pos_id: str, reason: str, pnl: float,
+                        resolution: str = ""):
+        """Cierra posición, actualiza capital y persiste. Debe llamarse con lock."""
+        pos = self._positions.get(pos_id)
+        if not pos:
+            return
 
-        elif status in ("in_position", "pending_sell"):
-            # Revisar precio actual
-            clob_p = clob_executor.get_best_ask(pos["yes_token_id"])
-            if clob_p:
-                pos["current_price"] = clob_p
-                db.upsert_open(pos_id, pos)
+        exit_yes  = pos.get("current_yes", pos["entry_yes"])
+        recovered = round(exit_yes * pos["tokens"], 4)
 
-            # Revisar si la venta se ejecutó
-            if pos.get("sell_order_id"):
-                order = clob_executor.get_order_status(pos["sell_order_id"])
-                if order.get("status") in ("FILLED", "MATCHED"):
-                    self._close_position(pos_id, pos, "take_profit")
-                    return
+        pos["exit_yes"]   = exit_yes
+        pos["pnl"]        = round(pnl, 4)
+        pos["reason"]     = reason
+        pos["resolution"] = resolution
+        pos["closed_at"]  = datetime.now(timezone.utc).isoformat()
 
-            # Detectar resolución (YES ≥ 0.99 → ganamos, NO ≥ 0.99 → perdemos)
-            if clob_p:
-                if clob_p >= 0.99:
-                    self._close_position(pos_id, pos, "won")
-                elif clob_p <= 0.01:
-                    self._close_position(pos_id, pos, "lost")
-
-    def _close_position(self, pos_id: str, pos: dict, reason: str):
-        """Cierra posición, calcula P&L y actualiza estado"""
-        exit_price = pos.get("current_price", pos["entry_price"])
-        tokens     = pos["tokens"]
-        pnl        = round((exit_price - pos["entry_price"]) * tokens, 4)
-
-        pos["exit_price"]  = exit_price
-        pos["pnl"]         = pnl
-        pos["reason"]      = reason
-        pos["closed_at"]   = datetime.now(timezone.utc).isoformat()
-
-        # Recuperar el valor de mercado actual
-        recovered = round(exit_price * tokens, 4)
-        self._capital = round(self._capital + recovered, 4)
-        self._total_pnl = round(self._total_pnl + pnl, 4)
+        self._capital    = round(self._capital + recovered, 4)
+        self._total_pnl  = round(self._total_pnl + pnl, 4)
 
         if pnl >= 0:
             self._wins += 1
         else:
             self._losses += 1
+
+        self._closed.insert(0, pos)
+        if len(self._closed) > 500:
+            self._closed.pop()
 
         db.insert_closed(pos_id, pos)
         db.delete_open(pos_id)
@@ -210,52 +242,62 @@ class Portfolio:
         db.set_state("total_pnl", str(self._total_pnl))
         db.append_capital(self._capital)
 
-    def force_close_all(self):
-        """Pánico: cancela todas las órdenes y cierra posiciones al precio actual"""
-        clob_executor.cancel_all()
-        with _lock:
-            for pos_id in list(self._positions.keys()):
-                pos = self._positions.get(pos_id)
-                if pos:
-                    self._close_position(pos_id, pos, "force_close")
+    # ── Cierre forzoso por ciudad (ventana expiró) ────────────────────────────
 
-    def force_close_city(self, city: str):
-        """Cierra todas las posiciones de una ciudad (ventana expiró)"""
-        with _lock:
-            city_positions = {
-                pos_id: pos for pos_id, pos in self._positions.items()
-                if pos.get("city") == city
-            }
+    def force_close_city(self, city: str, mins_chile: int):
+        """Cierra todas las posiciones de una ciudad. Debe llamarse con lock."""
+        for pos_id, pos in list(self._positions.items()):
+            if pos.get("city") != city:
+                continue
 
-        for pos_id, pos in city_positions.items():
-            # Cancelar solo las órdenes de esta posición (no cancel_all global)
+            # Cancelar órdenes individuales (no cancel_all para no afectar otras ciudades)
             if pos.get("buy_order_id") and pos.get("status") == "pending_buy":
                 clob_executor.cancel_order(pos["buy_order_id"])
             if pos.get("sell_order_id"):
                 clob_executor.cancel_order(pos["sell_order_id"])
 
-            # Intentar vender agresivo al precio actual
-            cur = pos.get("current_price", pos["entry_price"])
-            sell_p = round(cur - 0.01, 4)
-            if sell_p > 0.01 and pos.get("status") in ("in_position", "pending_sell"):
-                clob_executor.place_sell(pos["yes_token_id"], sell_p, pos["tokens"])
+            current_yes = pos.get("current_yes", pos["entry_yes"])
 
-            with _lock:
-                if pos_id in self._positions:
-                    self._close_position(pos_id, pos, "force_close")
+            # Venta agresiva si tenemos tokens
+            if pos.get("status") in ("in_position", "pending_sell"):
+                sell_p = round(current_yes - 0.01, 4)
+                if sell_p > 0.01:
+                    clob_executor.place_sell(pos["yes_token_id"], sell_p, pos["tokens"])
 
-    # ─── Test trade ───────────────────────────────────────────────────────────
+            pnl = round(pos["tokens"] * current_yes - pos["allocated"], 4)
+            sign = "+" if pnl >= 0 else ""
+            self._close_position(
+                pos_id, "FORCE_CLOSE", pnl,
+                resolution=f"Cierre forzoso ventana {city} · YES={current_yes*100:.1f}¢ ({sign}{pnl:.2f})"
+            )
+
+    # ── Capital sync desde Polymarket (exclusivo Clima-Gold) ─────────────────
+
+    def sync_capital_from_chain(self) -> dict:
+        """
+        Consulta saldo real de USDC en Polymarket y actualiza el capital disponible.
+        Se llama cada hora automáticamente.
+        """
+        info = clob_executor.get_wallet_info()
+        if info.get("status") != "ok" or info.get("balance") is None:
+            return {"ok": False, "error": info.get("error", "Sin datos")}
+
+        real_balance = float(info["balance"])
+        with lock:
+            prev = self._capital
+            self._capital = round(real_balance, 4)
+            db.set_state("capital", str(self._capital))
+
+        msg = f"Sync capital: ${prev:.4f} → ${self._capital:.4f} (saldo real Polymarket)"
+        return {"ok": True, "prev": prev, "balance": self._capital, "msg": msg}
+
+    # ── Test trade (verificación antes de iniciar bot) ────────────────────────
 
     def test_trade(self, opportunity: dict, amount_usdc: float = 1.0) -> dict:
-        """
-        Coloca una orden de prueba ($1) en un mercado real.
-        Sirve para verificar que la conexión y ejecución funcionan.
-        """
         price  = opportunity["yes_price"]
         clob_p = clob_executor.get_best_ask(opportunity["yes_token_id"])
         if clob_p:
             price = round(clob_p, 4)
-
         result = clob_executor.place_buy(
             token_id=opportunity["yes_token_id"],
             price=price,
@@ -265,37 +307,37 @@ class Portfolio:
         result["city"]   = opportunity.get("city", "?")
         return result
 
-    # ─── Stats ────────────────────────────────────────────────────────────────
+    # ── Stats para dashboard ──────────────────────────────────────────────────
+
+    def record_capital(self):
+        db.append_capital(self._capital)
 
     def get_stats(self) -> dict:
         open_positions = list(self._positions.values())
-        closed = db.load_closed_positions(50)
         total_trades = self._wins + self._losses
-        win_rate = round(self._wins / total_trades * 100, 1) if total_trades > 0 else 0
+        win_rate = round(self._wins / total_trades * 100, 1) if total_trades else 0
 
-        # Valor estimado de posiciones abiertas (tokens × precio actual)
         positions_value = sum(
-            pos.get("current_price", pos["entry_price"]) * pos["tokens"]
+            pos.get("current_yes", pos["entry_yes"]) * pos["tokens"]
             for pos in open_positions
         )
         total_portfolio = round(self._capital + positions_value, 4)
-
-        roi = round((total_portfolio - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100, 2)
+        roi = round((total_portfolio - self._initial_capital) / self._initial_capital * 100, 2)
 
         return {
-            "capital":          round(self._capital, 4),       # USDC libre disponible
-            "positions_value":  round(positions_value, 4),     # valor estimado de posiciones
-            "total_portfolio":  total_portfolio,               # capital + posiciones
-            "initial_capital":  INITIAL_CAPITAL,
+            "capital":          round(self._capital, 4),
+            "positions_value":  round(positions_value, 4),
+            "total_portfolio":  total_portfolio,
+            "initial_capital":  self._initial_capital,
             "total_pnl":        round(self._total_pnl, 4),
             "roi_pct":          roi,
-            "wins":           self._wins,
-            "losses":         self._losses,
-            "win_rate":       win_rate,
-            "open_count":     len(open_positions),
-            "open_positions": open_positions,
-            "closed_positions": closed,
-            "scan_count":     self._scan_count,
-            "last_scan":      self._last_scan,
-            "capital_history": db.load_capital_history(),
+            "wins":             self._wins,
+            "losses":           self._losses,
+            "win_rate":         win_rate,
+            "open_count":       len(open_positions),
+            "open_positions":   open_positions,
+            "closed_positions": self._closed[:50],
+            "scan_count":       self._scan_count,
+            "last_scan":        self._last_scan,
+            "capital_history":  db.load_capital_history(),
         }

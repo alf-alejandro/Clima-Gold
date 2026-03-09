@@ -56,10 +56,9 @@ def api_stop():
     return jsonify({"ok": ok, "message": "Bot detenido." if ok else "Ya estaba detenido."})
 
 
-@app.route("/api/bot/panic", methods=["POST"])
-def api_panic():
-    bot.emergency_stop()
-    return jsonify({"ok": True, "message": "PÁNICO: Bot detenido y posiciones cerradas."})
+@app.route("/api/bot/regime")
+def api_regime():
+    return jsonify({"regime": bot.active_regime})
 
 
 # ─── Ver capital real ─────────────────────────────────────────────────────────
@@ -84,12 +83,12 @@ def api_test_trade():
     amount = max(1.0, min(amount, 10.0))  # entre $1 y $10
 
     # Buscar un mercado disponible
-    opps = scanner.scan_all_markets()
+    opps = scanner.scan_opportunities()
     if not opps:
         return jsonify({
             "status": "no_market",
             "message": "No hay mercados de temperatura activos en este momento. "
-                       "Intenta en otro horario (los mercados abren ~12:00 hora local de cada ciudad)."
+                       "Intenta en otro horario (los mercados abren según ventanas por ciudad)."
         })
 
     # Tomar el primer mercado (menor precio = más tokens por dólar)
