@@ -3,6 +3,7 @@ clob_executor.py — Ejecución real de órdenes en Polymarket CLOB
 Usa credenciales de .env (POLYMARKET_KEY + PROXY_ADDRESS)
 """
 import os
+import math
 import threading
 import requests
 from dotenv import load_dotenv
@@ -81,7 +82,7 @@ def place_buy(token_id: str, price: float, amount_usdc: float) -> dict:
     try:
         client = get_client()
         price = round(price, 4)
-        size_tokens = round(amount_usdc / price, 2)
+        size_tokens = math.ceil(amount_usdc / price * 100) / 100  # round up so cost >= amount_usdc
         if size_tokens < 5.0:
             size_tokens = 5.0
 
