@@ -277,8 +277,38 @@ class BotThread:
             if yes_p is not None and no_p is not None:
                 price_map[cid] = (yes_p, no_p)
 
-        # 4. Portfolio operations (con lock)
+        # 4a. Actualizar precios → recoger exits TP (con lock, sin HTTP)
+        tp_exits = []
         with portfolio.lock:
+            if price_map:
+                tp_exits = portfolio.apply_price_updates(price_map)
+
+        # 4b. Colocar sells al precio de mercado para TP exits (HTTP, sin lock)
+        sells_done = []
+        for pos_id, yes_p, tokens, token_id, allocated in tp_exits:
+            if pos_id not in portfolio.positions:
+                continue  # ya cerrado (p.ej. por price thread)
+            if token_id:
+                sell_price = max(round(yes_p - 0.002, 4), 0.02)
+                clob_executor.place_sell(token_id, sell_price, tokens)
+                log.info(
+                    "TP sell @ %.1f¢ (entrada ~%.1f¢) — %s",
+                    yes_p * 100, allocated / tokens * 100 if tokens else 0,
+                    pos_id,
+                )
+            sells_done.append((pos_id, yes_p, tokens, allocated))
+
+        # 4c. Portfolio operations (con lock)
+        with portfolio.lock:
+
+            # Cerrar posiciones TP al precio capturado
+            for pos_id, yes_p, tokens, allocated in sells_done:
+                if pos_id in portfolio.positions:
+                    pnl = round(tokens * yes_p - allocated, 4)
+                    portfolio._close_position(
+                        pos_id, "TAKE_PROFIT", pnl,
+                        resolution=f"Take profit @ YES={yes_p*100:.1f}¢",
+                    )
 
             # Abrir nuevas posiciones
             for opp in verified_opps:
@@ -297,10 +327,6 @@ class BotThread:
                             opp["yes_price"] * 100, amount,
                             opp["score"], opp["zone"],
                         )
-
-            # Actualizar precios y ejecutar exits automáticos
-            if price_map:
-                portfolio.apply_price_updates(price_map)
 
             # Auto-liquidar posiciones con entrada fuera de rango (robustez)
             for pid, pos in list(portfolio.positions.items()):
@@ -370,9 +396,31 @@ class BotThread:
             if yes_p is not None and no_p is not None:
                 price_map[cid] = (yes_p, no_p)
 
+        tp_exits = []
         if price_map:
             with self.portfolio.lock:
-                self.portfolio.apply_price_updates(price_map)
+                tp_exits = self.portfolio.apply_price_updates(price_map)
+
+        # Sells al precio de mercado para TP (HTTP, sin lock)
+        sells_done = []
+        for pos_id, yes_p, tokens, token_id, allocated in tp_exits:
+            if pos_id not in self.portfolio.positions:
+                continue
+            if token_id:
+                sell_price = max(round(yes_p - 0.002, 4), 0.02)
+                clob_executor.place_sell(token_id, sell_price, tokens)
+            sells_done.append((pos_id, yes_p, tokens, allocated))
+
+        if sells_done:
+            with self.portfolio.lock:
+                for pos_id, yes_p, tokens, allocated in sells_done:
+                    if pos_id in self.portfolio.positions:
+                        pnl = round(tokens * yes_p - allocated, 4)
+                        self.portfolio._close_position(
+                            pos_id, "TAKE_PROFIT", pnl,
+                            resolution=f"Take profit @ YES={yes_p*100:.1f}¢",
+                        )
+
         # check fills (fuera del lock principal)
         self.portfolio.check_fills()
 

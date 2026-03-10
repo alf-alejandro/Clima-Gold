@@ -143,19 +143,24 @@ class Portfolio:
 
     # ── Monitoreo de órdenes y precios ────────────────────────────────────────
 
-    def apply_price_updates(self, price_map: dict):
-        """Aplica actualizaciones de precio y ejecuta exits automáticos."""
+    def apply_price_updates(self, price_map: dict) -> list:
+        """
+        Aplica actualizaciones de precio.
+        - WON / LOST: cierra internamente (resolución de mercado).
+        - TAKE_PROFIT: retorna lista para que el caller coloque sell de mercado
+          al precio actual antes de cerrar internamente.
+        Retorna: [(pos_id, yes_p, tokens, yes_token_id, allocated), ...]
+        """
+        tp_exits = []
         for pos_id, pos in list(self._positions.items()):
             cid = pos.get("condition_id") or pos_id
             if cid not in price_map:
                 continue
 
             yes_p, no_p = price_map[cid]
-            old = pos.get("current_yes", pos["entry_yes"])
             pos["current_yes"] = yes_p
             db.upsert_open(pos_id, pos)
 
-            # Exits automáticos (idénticos a clima-v2)
             if yes_p >= 0.99:
                 pnl = round(pos["tokens"] * yes_p - pos["allocated"], 4)
                 self._close_position(pos_id, "WON", pnl,
@@ -167,14 +172,19 @@ class Portfolio:
                     resolution=f"NO resuelto ≥0.99 @ {yes_p:.4f}")
 
             elif yes_p >= TAKE_PROFIT_YES:
-                pnl = round(pos["tokens"] * yes_p - pos["allocated"], 4)
-                self._close_position(pos_id, "TAKE_PROFIT", pnl,
-                    resolution=f"Take profit @ {yes_p:.4f}")
+                tp_exits.append((
+                    pos_id, yes_p, pos["tokens"],
+                    pos.get("yes_token_id"), pos["allocated"],
+                ))
+
+        return tp_exits
 
     def check_fills(self):
         """
         Monitorea fills de órdenes BUY pendientes.
         HTTP fuera del lock para no bloquear el scan loop.
+        El take-profit se ejecuta al precio de mercado cuando el monitor
+        detecta YES ≥ TAKE_PROFIT_YES (no con orden límite fija).
         """
         with lock:
             snapshot = list(self._positions.items())
@@ -189,16 +199,6 @@ class Portfolio:
                         if pos_id in self._positions:
                             self._positions[pos_id]["status"] = "in_position"
                             db.upsert_open(pos_id, self._positions[pos_id])
-                            # Colocar orden de venta al take profit
-                            sell = clob_executor.place_sell(
-                                token_id=pos["yes_token_id"],
-                                price=TAKE_PROFIT_YES,
-                                size_tokens=pos["tokens"],
-                            )
-                            if sell["status"] == "ok":
-                                self._positions[pos_id]["sell_order_id"] = sell["order_id"]
-                                self._positions[pos_id]["status"] = "pending_sell"
-                                db.upsert_open(pos_id, self._positions[pos_id])
             except Exception:
                 pass
 
