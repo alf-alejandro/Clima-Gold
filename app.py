@@ -3,7 +3,9 @@ app.py — Flask app para Clima-Gold
 Dashboard + API para controlar el bot de temperatura de Polymarket
 """
 import os
-from flask import Flask, jsonify, render_template, request
+import io
+import csv
+from flask import Flask, jsonify, make_response, render_template, request
 from dotenv import load_dotenv
 
 import db
@@ -117,6 +119,30 @@ def api_cancel(order_id):
 def api_cancel_all():
     ok = clob_executor.cancel_all()
     return jsonify({"ok": ok, "message": "Todas las órdenes canceladas."})
+
+
+# ─── Exportar trades como CSV ─────────────────────────────────────────────────
+
+@app.route("/api/trades.csv")
+def trades_csv():
+    closed = db.load_closed_positions(10000)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Ciudad", "Pregunta", "Entrada_YES", "Salida_YES", "PnL_USD", "Resultado", "Fecha"])
+    for p in closed:
+        writer.writerow([
+            p.get("city", ""),
+            p.get("question", ""),
+            p.get("entry_yes", ""),
+            p.get("exit_yes", ""),
+            p.get("pnl", ""),
+            p.get("reason", ""),
+            p.get("closed_at", ""),
+        ])
+    resp = make_response(output.getvalue())
+    resp.headers["Content-Disposition"] = "attachment; filename=clima_gold_trades.csv"
+    resp.headers["Content-Type"] = "text/csv; charset=utf-8"
+    return resp
 
 
 if __name__ == "__main__":

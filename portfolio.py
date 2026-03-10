@@ -314,8 +314,9 @@ class Portfolio:
 
     def get_stats(self) -> dict:
         open_positions = list(self._positions.values())
-        total_trades = self._wins + self._losses
-        win_rate = round(self._wins / total_trades * 100, 1) if total_trades else 0
+        closed         = self._closed
+        total_trades   = self._wins + self._losses
+        win_rate       = round(self._wins / total_trades * 100, 1) if total_trades else 0
 
         positions_value = sum(
             pos.get("current_yes", pos["entry_yes"]) * pos["tokens"]
@@ -323,6 +324,36 @@ class Portfolio:
         )
         total_portfolio = round(self._capital + positions_value, 4)
         roi = round((total_portfolio - self._initial_capital) / self._initial_capital * 100, 2)
+
+        # Profit Factor
+        gross_wins   = sum(p.get("pnl", 0) for p in closed if (p.get("pnl") or 0) > 0)
+        gross_losses = abs(sum(p.get("pnl", 0) for p in closed if (p.get("pnl") or 0) < 0))
+        profit_factor = round(gross_wins / gross_losses, 2) if gross_losses > 0 else None
+
+        # Max Drawdown
+        history    = db.load_capital_history()
+        peak       = self._initial_capital
+        max_dd_pct = 0.0
+        for h in history:
+            if h["capital"] > peak:
+                peak = h["capital"]
+            if peak > 0:
+                dd = (peak - h["capital"]) / peak * 100
+                if dd > max_dd_pct:
+                    max_dd_pct = dd
+
+        # P&L por ciudad
+        city_stats: dict = {}
+        for p in closed:
+            city = p.get("city", "?")
+            if city not in city_stats:
+                city_stats[city] = {"wins": 0, "losses": 0, "pnl": 0.0}
+            pnl = p.get("pnl") or 0
+            city_stats[city]["pnl"] = round(city_stats[city]["pnl"] + pnl, 4)
+            if pnl > 0:
+                city_stats[city]["wins"]   += 1
+            else:
+                city_stats[city]["losses"] += 1
 
         return {
             "capital":          round(self._capital, 4),
@@ -334,10 +365,15 @@ class Portfolio:
             "wins":             self._wins,
             "losses":           self._losses,
             "win_rate":         win_rate,
+            "profit_factor":    profit_factor,
+            "max_drawdown_pct": round(max_dd_pct, 2),
+            "gross_wins":       round(gross_wins, 4),
+            "gross_losses":     round(gross_losses, 4),
+            "city_stats":       city_stats,
             "open_count":       len(open_positions),
             "open_positions":   open_positions,
-            "closed_positions": self._closed[:50],
+            "closed_positions": closed[:50],
             "scan_count":       self._scan_count,
             "last_scan":        self._last_scan,
-            "capital_history":  db.load_capital_history(),
+            "capital_history":  history,
         }

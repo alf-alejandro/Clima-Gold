@@ -39,8 +39,9 @@
   .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
   .grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  @media(max-width:900px){ .grid-3,.grid-4{grid-template-columns:1fr 1fr} .grid-2{grid-template-columns:1fr} }
-  @media(max-width:600px){ .grid-3,.grid-4,.grid-2{grid-template-columns:1fr} }
+  .grid-3c{ display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+  @media(max-width:900px){ .grid-3,.grid-4,.grid-3c{grid-template-columns:1fr 1fr} .grid-2{grid-template-columns:1fr} }
+  @media(max-width:600px){ .grid-3,.grid-4,.grid-2,.grid-3c{grid-template-columns:1fr} }
 
   /* Cards */
   .card {
@@ -152,7 +153,7 @@
     <span>⏱ Último scan: <strong id="statLastScan">—</strong></span>
   </div>
 
-  <!-- KPIs -->
+  <!-- KPIs fila 1 -->
   <div class="grid-4 mb">
     <div class="card">
       <div class="card-title">Portfolio Total</div>
@@ -176,14 +177,41 @@
     </div>
   </div>
 
-  <!-- CHART + OPORTUNIDADES -->
-  <div class="grid-2 mb">
+  <!-- KPIs fila 2 -->
+  <div class="grid-3c mb">
+    <div class="card">
+      <div class="card-title">Profit Factor</div>
+      <div class="kpi-value" id="kpiPF">—</div>
+      <div class="kpi-sub" id="kpiPFsub">Bruto ganado / Bruto perdido</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Max Drawdown</div>
+      <div class="kpi-value" id="kpiDD">—</div>
+      <div class="kpi-sub">Caída máxima desde pico</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Trades Cerrados</div>
+      <div class="kpi-value" id="kpiTrades">—</div>
+      <div class="kpi-sub" id="kpiGross">Ganado: — · Perdido: —</div>
+    </div>
+  </div>
+
+  <!-- CHARTS -->
+  <div class="grid-3c mb">
     <div class="card">
       <div class="section-header">
         <div class="section-title">📈 Evolución del Capital</div>
       </div>
       <div class="chart-wrap">
         <canvas id="capitalChart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-header">
+        <div class="section-title">🏙 P&amp;L por Ciudad</div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="cityChart"></canvas>
       </div>
     </div>
     <div class="card">
@@ -227,7 +255,12 @@
   <div class="card mb">
     <div class="section-header">
       <div class="section-title">📋 Historial de Trades</div>
-      <span class="count-badge" id="closedCount">0</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span class="count-badge" id="closedCount">0</span>
+        <a href="/api/trades.csv" download class="btn btn-outline" style="padding:4px 10px;font-size:11px;text-decoration:none;">
+          ⬇ CSV
+        </a>
+      </div>
     </div>
     <table>
       <thead>
@@ -251,7 +284,7 @@
 </div><!-- /main -->
 
 <script>
-// ─── Chart ───────────────────────────────────────────────────────────────────
+// ─── Capital Chart ────────────────────────────────────────────────────────────
 const ctx = document.getElementById('capitalChart').getContext('2d');
 let capitalChart = new Chart(ctx, {
   type: 'line',
@@ -270,6 +303,38 @@ let capitalChart = new Chart(ctx, {
     }
   }
 });
+
+// ─── City Chart ──────────────────────────────────────────────────────────────
+let cityChart = null;
+function renderCityChart(cityStats) {
+  const cities = Object.keys(cityStats);
+  if (!cities.length) return;
+  const pnls   = cities.map(c => cityStats[c].pnl);
+  const colors = pnls.map(p => p >= 0 ? 'rgba(63,185,80,0.75)' : 'rgba(248,81,73,0.75)');
+  if (cityChart) {
+    cityChart.data.labels = cities;
+    cityChart.data.datasets[0].data = pnls;
+    cityChart.data.datasets[0].backgroundColor = colors;
+    cityChart.update('none');
+    return;
+  }
+  const cctx = document.getElementById('cityChart').getContext('2d');
+  cityChart = new Chart(cctx, {
+    type: 'bar',
+    data: { labels: cities, datasets: [{ data: pnls, backgroundColor: colors }] },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: { label: c => ` $${c.parsed.x.toFixed(2)}` }
+      }},
+      scales: {
+        x: { ticks: { color:'#8b949e', callback: v=>`$${v}`, font:{size:10} }, grid: { color:'#21262d' } },
+        y: { ticks: { color:'#8b949e', font:{size:10} }, grid: { color:'#21262d' } }
+      }
+    }
+  });
+}
 
 // ─── Utils ───────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -316,6 +381,7 @@ async function refresh() {
     updateHeader(d);
     updateKPIs(d);
     updateChart(d.capital_history || []);
+    if (d.city_stats) renderCityChart(d.city_stats);
     updateOpportunities(d.opportunities || []);
     updateOpenPositions(d.open_positions || []);
     updateClosedPositions(d.closed_positions || []);
@@ -339,6 +405,7 @@ function updateHeader(d) {
 
 function updateKPIs(d) {
   const pnl = parseFloat(d.total_pnl || 0);
+  // Fila 1
   $('kpiCapital').textContent = fmtUSD(d.total_portfolio ?? d.capital);
   $('kpiCapitalSub').textContent = `USDC libre: ${fmtUSD(d.capital)} · Posiciones: ${fmtUSD(d.positions_value)}`;
   $('kpiPnl').textContent = fmtUSD(pnl);
@@ -347,6 +414,17 @@ function updateKPIs(d) {
   $('kpiWinRate').textContent = `${d.win_rate || 0}%`;
   $('kpiWL').textContent = `W/L: ${d.wins || 0} / ${d.losses || 0}`;
   $('kpiOpen').textContent = d.open_count || 0;
+  // Fila 2 — nuevas métricas
+  const pf = d.profit_factor;
+  $('kpiPF').textContent = pf !== null && pf !== undefined ? pf.toFixed(2) : '—';
+  $('kpiPF').className = `kpi-value ${pf >= 1.5 ? 'green' : pf >= 1 ? 'amber' : 'red'}`;
+  $('kpiPFsub').textContent = `Ganado $${(d.gross_wins||0).toFixed(2)} / Perdido $${(d.gross_losses||0).toFixed(2)}`;
+  const dd = d.max_drawdown_pct || 0;
+  $('kpiDD').textContent = `${dd.toFixed(1)}%`;
+  $('kpiDD').className = `kpi-value ${dd < 10 ? 'green' : dd < 25 ? 'amber' : 'red'}`;
+  const total = (d.wins || 0) + (d.losses || 0);
+  $('kpiTrades').textContent = total;
+  $('kpiGross').textContent = `✅ ${d.wins || 0} ganados · ❌ ${d.losses || 0} perdidos`;
   // status bar
   $('statCapital').textContent = fmtUSD(d.capital);
   $('statPnl').textContent = fmtUSD(pnl);
