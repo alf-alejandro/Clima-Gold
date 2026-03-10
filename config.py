@@ -47,14 +47,15 @@ OBSERVER_UTC_OFFSET = int(os.environ.get("OBSERVER_UTC_OFFSET", -3))
 # Formato: (open_h, open_m, close_h, close_m)
 # Al cierre se fuerza el cierre de todas las posiciones de esa ciudad.
 CITY_WINDOWS = {
-    "buenos-aires": (11,  0, 17,  0),
+    "buenos-aires": (11,  0, 15,  0),
     "london":       ( 8,  0, 10,  0),
     "miami":        (11,  0, 17,  0),
-    "nyc":          (11,  0, 17,  0),
     "paris":        ( 6,  0, 10,  0),
     "toronto":      (14,  0, 17,  0),
     "seattle":      (16,  0, 20,  0),
-    "seoul":        (23,  0,  3,  0),  # cruza medianoche
+    "wellington":   (19,  0, 21, 30),
+    "sao-paulo":    (11,  0, 13,  0),
+    "seoul":        ( 0,  0,  1,  0),
 }
 
 # ── Límites de exposición regional ───────────────────────────────────────────
@@ -64,10 +65,11 @@ REGION_MAP = {
     "buenos-aires": "southern",
     "london":       "europe",
     "miami":        "south",
-    "nyc":          "northeast",
     "paris":        "europe",
     "toronto":      "northeast",
     "seattle":      "pacific",
+    "wellington":   "southern",
+    "sao-paulo":    "southern",
     "seoul":        "asia",
 }
 
@@ -82,10 +84,11 @@ CITY_UTC_OFFSET = {
     "buenos-aires": -3,
     "london":        0,
     "miami":        -5,
-    "nyc":          -5,
     "paris":         1,
     "toronto":      -5,
     "seattle":      -8,
+    "wellington":   13,
+    "sao-paulo":    -3,
     "seoul":         9,
 }
 
@@ -94,9 +97,10 @@ WEATHER_CITIES = [
     "buenos-aires",
     "london",
     "miami",
-    "nyc",
     "paris",
     "toronto",
     "seattle",
+    "wellington",
+    "sao-paulo",
     "seoul",
 ]
