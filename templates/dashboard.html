@@ -70,28 +70,6 @@
   .btn-outline{ background: transparent; color: var(--text); border: 1px solid var(--border); }
   .btn:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-1px); }
 
-  /* Panel de capital */
-  .balance-panel {
-    background: linear-gradient(135deg, #1c1500, var(--surface));
-    border: 1px solid var(--amber);
-    border-radius: 10px; padding: 16px; margin-bottom: 16px;
-  }
-  .balance-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .balance-value { font-size: 32px; font-weight: 700; color: var(--gold); }
-  .balance-label { font-size: 12px; color: var(--muted); }
-
-  /* Sección de prueba */
-  .test-panel {
-    background: var(--surface2); border: 1px solid var(--blue);
-    border-radius: 10px; padding: 16px; margin-bottom: 16px;
-  }
-  .test-result {
-    margin-top: 12px; padding: 10px; border-radius: 6px; font-size: 13px;
-    font-family: monospace; white-space: pre-wrap; display: none;
-  }
-  .test-result.ok  { background: rgba(63,185,80,.1); border: 1px solid var(--green); color: var(--green); }
-  .test-result.err { background: rgba(248,81,73,.1);  border: 1px solid var(--red);   color: var(--red); }
-
   /* Spinner */
   .spinner { display:none; width:16px;height:16px;border:2px solid var(--border);
              border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;
@@ -146,7 +124,7 @@
 <div class="header">
   <div>
     <h1>⚡ CLIMA GOLD</h1>
-    <div class="subtitle">Bot de Temperatura — Polymarket · 6 Ciudades Globales</div>
+    <div class="subtitle">Bot de Temperatura — Polymarket · 8 Ciudades Globales</div>
   </div>
   <span id="botBadge" class="badge badge-stopped">⏹ Detenido</span>
   <span id="statusMsg" style="color:var(--muted);font-size:12px;">—</span>
@@ -154,46 +132,6 @@
 </div>
 
 <div class="main">
-
-  <!-- PANEL DE CAPITAL REAL -->
-  <div class="balance-panel">
-    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">
-      💰 Capital Real en Polymarket
-    </div>
-    <div class="balance-row">
-      <div>
-        <div class="balance-value" id="realBalance">—</div>
-        <div class="balance-label" id="balanceLabel">USDC disponible en tu cuenta</div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        <button class="btn btn-gold" onclick="checkBalance()">
-          🔍 Ver mi Capital
-          <span class="spinner" id="spinBalance"></span>
-        </button>
-        <div style="font-size:10px;color:var(--muted)" id="balanceNote"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- PANEL DE PRUEBA -->
-  <div class="test-panel">
-    <div style="font-size:11px;color:var(--blue);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">
-      🧪 Prueba de Ejecución — Antes de Iniciar el Bot
-    </div>
-    <div style="color:var(--muted);font-size:12px;margin-bottom:12px;">
-      Coloca una orden real de $1 para verificar que la conexión con Polymarket funciona correctamente.
-    </div>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-      <button class="btn btn-blue" onclick="runTestTrade()">
-        🎯 Prueba con $1
-        <span class="spinner" id="spinTest"></span>
-      </button>
-      <span style="color:var(--muted);font-size:11px;">
-        ← Verifica esto antes de presionar "Iniciar Bot"
-      </span>
-    </div>
-    <div class="test-result" id="testResult"></div>
-  </div>
 
   <!-- CONTROLES DEL BOT -->
   <div class="controls">
@@ -355,71 +293,6 @@ function statusPill(s) {
   return `<span class="pill ${cls}">${label}</span>`;
 }
 
-// ─── Check balance ────────────────────────────────────────────────────────────
-async function checkBalance() {
-  $('spinBalance').style.display = 'inline-block';
-  $('realBalance').textContent = '...';
-  try {
-    const r = await fetch('/api/balance').then(r=>r.json());
-    if (r.status === 'error') {
-      $('realBalance').textContent = 'Error';
-      $('balanceLabel').textContent = r.error;
-    } else {
-      const bal = r.balance !== null ? `$${parseFloat(r.balance).toFixed(2)}` : '—';
-      $('realBalance').textContent = bal;
-      $('balanceLabel').textContent = 'USDC en tu bóveda de Polymarket';
-      $('balanceNote').textContent = `Allowance: ${r.allowance}`;
-    }
-  } catch(e) {
-    $('realBalance').textContent = 'Error de red';
-  }
-  $('spinBalance').style.display = 'none';
-}
-
-// ─── Test trade ───────────────────────────────────────────────────────────────
-async function runTestTrade() {
-  const btn = event.target;
-  $('spinTest').style.display = 'inline-block';
-  btn.disabled = true;
-  const el = $('testResult');
-  el.textContent = 'Buscando mercado y colocando orden...';
-  el.className = 'test-result ok';
-  el.style.display = 'block';
-
-  try {
-    const r = await fetch('/api/test_trade', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({amount:1.0})
-    }).then(r=>r.json());
-
-    if (r.status === 'ok') {
-      el.className = 'test-result ok';
-      el.textContent = `✅ PRUEBA EXITOSA — El bot está conectado y puede operar.
-
-🏙  Mercado: ${r.market}
-🆔 Order ID: ${r.order_id}
-💰 Precio:   ${r.price} YES
-🪙 Tokens:   ${r.size_tokens}
-💵 Costo:    $${r.cost_usdc} USDC
-
-La orden quedó activa en Polymarket. Puedes verla en tu cuenta.
-Ahora puedes presionar "Iniciar Bot" con confianza.`;
-    } else if (r.status === 'no_market') {
-      el.className = 'test-result err';
-      el.textContent = `⚠️ ${r.message}`;
-    } else {
-      el.className = 'test-result err';
-      el.textContent = `❌ Error: ${r.error || JSON.stringify(r)}`;
-    }
-  } catch(e) {
-    el.className = 'test-result err';
-    el.textContent = `❌ Error de red: ${e.message}`;
-  }
-  $('spinTest').style.display = 'none';
-  btn.disabled = false;
-}
-
 // ─── Bot control ─────────────────────────────────────────────────────────────
 async function startBot() {
   const r = await fetch('/api/bot/start', {method:'POST'}).then(r=>r.json());
@@ -429,11 +302,6 @@ async function stopBot() {
   if (!confirm('¿Detener el bot? Se cancelarán las órdenes límite activas.')) return;
   const r = await fetch('/api/bot/stop', {method:'POST'}).then(r=>r.json());
   console.log(r.message);
-}
-async function panicStop() {
-  if (!confirm('🚨 PÁNICO: ¿Detener el bot y cerrar TODAS las posiciones al precio actual?')) return;
-  const r = await fetch('/api/bot/panic', {method:'POST'}).then(r=>r.json());
-  alert(r.message);
 }
 async function cancelAllOrders() {
   if (!confirm('¿Cancelar todas las órdenes límite? (No cierra posiciones ya compradas)')) return;
@@ -524,17 +392,18 @@ function updateOpenPositions(positions) {
   }
   tb.innerHTML = positions.map(p => {
     const tp = 0.15;
-    const pct = Math.min(100, Math.round(((p.current_price||p.entry_price) - p.entry_price) / (tp - p.entry_price) * 100));
-    const cur = p.current_price || p.entry_price;
-    const diff = cur - p.entry_price;
+    const entry = p.entry_yes || 0;
+    const cur   = p.current_yes || entry;
+    const pct   = Math.min(100, Math.round((cur - entry) / (tp - entry) * 100));
+    const diff  = cur - entry;
     return `
       <tr>
         <td style="font-family:monospace;font-size:11px">${p.pos_id}</td>
         <td>🏙 ${p.city}</td>
-        <td>${p.entry_price.toFixed(4)}</td>
+        <td>${entry.toFixed(4)}</td>
         <td class="${diff>0?'green':diff<0?'red':''}">${cur.toFixed(4)}</td>
-        <td>${p.tokens.toFixed(1)}</td>
-        <td>${fmtUSD(p.amount_usdc)}</td>
+        <td>${(p.tokens||0).toFixed(1)}</td>
+        <td>${fmtUSD(p.allocated)}</td>
         <td>
           <div class="progress-wrap">
             <div class="progress-fill" style="width:${Math.max(0,pct)}%"></div>
@@ -559,8 +428,8 @@ function updateClosedPositions(positions) {
     return `
       <tr>
         <td>🏙 ${p.city}</td>
-        <td>${(p.entry_price||0).toFixed(4)}</td>
-        <td>${(p.exit_price||0).toFixed(4)}</td>
+        <td>${(p.entry_yes||0).toFixed(4)}</td>
+        <td>${(p.exit_yes||0).toFixed(4)}</td>
         <td class="${pnlClass(pnl)}">${fmtUSD(pnl)}</td>
         <td>${statusPill(p.reason)}</td>
         <td style="color:var(--muted)">${fmtTS(p.closed_at)}</td>
