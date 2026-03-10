@@ -48,42 +48,11 @@ def get_wallet_info() -> dict:
     """Obtiene el balance real de USDC en la cuenta de Polymarket"""
     try:
         client = get_client()
-
-        # Intentar API moderna (balance_allowance)
-        try:
-            from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
-            params = BalanceAllowanceParams(asset_type=AssetType.USDC)
-            result = client.get_balance_allowance(params)
-            balance   = round(int(result.get("balance", 0)) / 1e6, 2)
-            allowance = int(result.get("allowance", 0))
-            # Si allowance es muy grande (max uint256) mostrar como "ilimitado"
-            allowance_display = "ilimitado" if allowance > 1e30 else round(allowance / 1e6, 2)
-            return {
-                "balance": balance,
-                "allowance": allowance_display,
-                "status": "ok"
-            }
-        except Exception:
-            pass
-
-        # Fallback: solo allowance
-        usdc_address = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
-        raw_allowance = client.get_allowance(usdc_address)
-        raw_val = float(raw_allowance)
-        # Si el valor es muy grande, es raw wei (6 decimales)
-        if raw_val > 1000:
-            balance_display = round(raw_val / 1e6, 2)
-            note = "USDC disponible"
-        else:
-            balance_display = raw_val
-            note = "USDC disponible"
-        return {
-            "balance": balance_display,
-            "allowance": "aprobado",
-            "status": "ok",
-            "note": note
-        }
-
+        from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
+        # AssetType.COLLATERAL = USDC en Polymarket
+        result  = client.get_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.COLLATERAL))
+        balance = round(int(result.get("balance", 0)) / 1e6, 2)
+        return {"balance": balance, "allowance": "aprobado", "status": "ok"}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
