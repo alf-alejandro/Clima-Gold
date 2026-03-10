@@ -82,13 +82,12 @@ def api_test_trade():
     amount = float(data.get("amount", 1.0))
     amount = max(1.0, min(amount, 10.0))  # entre $1 y $10
 
-    # Buscar un mercado disponible
-    opps = scanner.scan_opportunities()
+    # Buscar cualquier mercado disponible (sin restricción de ventana horaria)
+    opps = scanner.scan_opportunities(ignore_windows=True)
     if not opps:
         return jsonify({
             "status": "no_market",
-            "message": "No hay mercados de temperatura activos en este momento. "
-                       "Intenta en otro horario (los mercados abren según ventanas por ciudad)."
+            "message": "No se encontraron mercados de temperatura en Polymarket en este momento."
         })
 
     # Tomar el primer mercado (menor precio = más tokens por dólar)

@@ -172,7 +172,7 @@ def fetch_yes_price_clob(yes_token_id):
         return None, None
 
 
-def scan_opportunities(existing_ids=None):
+def scan_opportunities(existing_ids=None, ignore_windows=False):
     """
     Escanea mercados de temperatura YES-side.
     Idéntico a clima-v2:
@@ -180,6 +180,8 @@ def scan_opportunities(existing_ids=None):
     - Filtro Gamma: NO 0.88-0.97 (= YES 0.03-0.12) para discovery
     - El entry gate real (YES 0.06-0.115) se aplica en bot.py tras verificar CLOB
     - Retorna candidatos ordenados por YES price ascendente
+
+    ignore_windows=True: omite el check de ventana horaria (solo para test trade)
     """
     if existing_ids is None:
         existing_ids = set()
@@ -190,7 +192,7 @@ def scan_opportunities(existing_ids=None):
 
     for scan_date in scan_dates:
         for city in WEATHER_CITIES:
-            if not city_is_ready(city, scan_date, today):
+            if not ignore_windows and not city_is_ready(city, scan_date, today):
                 continue
             slug  = build_event_slug(city, scan_date)
             event = fetch_event_by_slug(slug)
