@@ -289,11 +289,11 @@ class BotThread:
             if pos_id not in portfolio.positions:
                 continue  # ya cerrado (p.ej. por price thread)
             if token_id:
-                result = clob_executor.place_market_sell(token_id, tokens)
+                result = clob_executor.place_market_sell_all(token_id, tokens)
                 log.info(
-                    "TP FOK sell @ %.1f¢ detectado — %s — %s",
+                    "TP sell @ %.1f¢ — %s — intentos=%s estado=%s",
                     yes_p * 100, pos_id,
-                    "ok" if result["status"] == "ok" else result.get("error"),
+                    result.get("attempts"), result["status"],
                 )
             sells_done.append((pos_id, yes_p, tokens, allocated))
 
@@ -406,7 +406,7 @@ class BotThread:
             if pos_id not in self.portfolio.positions:
                 continue
             if token_id:
-                clob_executor.place_market_sell(token_id, tokens)
+                clob_executor.place_market_sell_all(token_id, tokens)
             sells_done.append((pos_id, yes_p, tokens, allocated))
 
         if sells_done:

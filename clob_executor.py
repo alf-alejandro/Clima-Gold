@@ -4,6 +4,7 @@ Usa credenciales de .env (POLYMARKET_KEY + PROXY_ADDRESS)
 """
 import os
 import math
+import time
 import threading
 import requests
 from dotenv import load_dotenv
@@ -94,35 +95,56 @@ def get_best_bid(yes_token_id: str) -> float | None:
         return None
 
 
-def place_market_sell(token_id: str, size_tokens: float) -> dict:
+def place_market_sell_all(token_id: str, size_tokens: float,
+                          max_attempts: int = 20, pause: float = 0.5) -> dict:
     """
-    Vende toda la posición al precio de mercado usando FOK (Fill or Kill).
-    Si no hay suficiente liquidez para la orden completa, se cancela sin parciales.
+    Vende TODA la posición al precio de mercado en loop hasta completar.
+    Cada intento: FOK al best_bid − 0.01 (taker agresivo).
+    - FOK llena: éxito inmediato.
+    - FOK cancela (sin liquidez): reintenta con bid actualizado.
+    - Tras max_attempts sin éxito: deja GTC al último bid como red de seguridad.
     """
+    size_tokens = round(size_tokens, 2)
+    client = get_client()
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            bid = get_best_bid(token_id)
+            price = max(round((bid - 0.01) if bid else 0.05, 4), 0.01)
+
+            order_args   = OrderArgs(price=price, size=size_tokens, side=SELL, token_id=token_id)
+            signed_order = client.create_order(order_args)
+            resp         = client.post_order(signed_order, OrderType.FOK)
+
+            if "orderID" in resp:
+                return {
+                    "status":      "ok",
+                    "order_id":    resp["orderID"],
+                    "size_tokens": size_tokens,
+                    "price":       price,
+                    "attempts":    attempt,
+                }
+        except Exception:
+            pass
+
+        time.sleep(pause)
+
+    # Red de seguridad: GTC al último bid conocido
     try:
-        client = get_client()
-        size_tokens = round(size_tokens, 2)
-
-        # Precio agresivo: best bid - 0.01 para cruzar el spread y llenar como taker
         bid = get_best_bid(token_id)
-        price = round((bid - 0.01) if bid else 0.05, 4)
-        price = max(price, 0.01)
-
-        order_args  = OrderArgs(price=price, size=size_tokens, side=SELL, token_id=token_id)
+        price = max(round((bid - 0.01) if bid else 0.01, 4), 0.01)
+        order_args   = OrderArgs(price=price, size=size_tokens, side=SELL, token_id=token_id)
         signed_order = client.create_order(order_args)
-        resp = client.post_order(signed_order, OrderType.FOK)
-
-        if "orderID" not in resp:
-            return {"status": "error", "error": f"API rechazó la orden: {resp}"}
-
+        resp         = client.post_order(signed_order, OrderType.GTC)
         return {
-            "status": "ok",
-            "order_id":    resp["orderID"],
+            "status":      "gtc_fallback",
+            "order_id":    resp.get("orderID"),
             "size_tokens": size_tokens,
             "price":       price,
+            "attempts":    max_attempts,
         }
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        return {"status": "error", "error": str(e), "attempts": max_attempts}
 
 
 def place_buy(token_id: str, price: float, amount_usdc: float) -> dict:
