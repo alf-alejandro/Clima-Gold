@@ -77,6 +77,54 @@ def get_best_ask(yes_token_id: str) -> float | None:
         return None
 
 
+def get_best_bid(yes_token_id: str) -> float | None:
+    """Obtiene el mejor precio de venta (best bid) del order book público"""
+    try:
+        r = requests.get(
+            f"{HOST}/book",
+            params={"token_id": yes_token_id},
+            timeout=6
+        )
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        bids = sorted(data.get("bids", []), key=lambda x: float(x["price"]), reverse=True)
+        return float(bids[0]["price"]) if bids else None
+    except Exception:
+        return None
+
+
+def place_market_sell(token_id: str, size_tokens: float) -> dict:
+    """
+    Vende toda la posición al precio de mercado usando FOK (Fill or Kill).
+    Si no hay suficiente liquidez para la orden completa, se cancela sin parciales.
+    """
+    try:
+        client = get_client()
+        size_tokens = round(size_tokens, 2)
+
+        # Precio agresivo: best bid - 0.01 para cruzar el spread y llenar como taker
+        bid = get_best_bid(token_id)
+        price = round((bid - 0.01) if bid else 0.05, 4)
+        price = max(price, 0.01)
+
+        order_args  = OrderArgs(price=price, size=size_tokens, side=SELL, token_id=token_id)
+        signed_order = client.create_order(order_args)
+        resp = client.post_order(signed_order, OrderType.FOK)
+
+        if "orderID" not in resp:
+            return {"status": "error", "error": f"API rechazó la orden: {resp}"}
+
+        return {
+            "status": "ok",
+            "order_id":    resp["orderID"],
+            "size_tokens": size_tokens,
+            "price":       price,
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
 def place_buy(token_id: str, price: float, amount_usdc: float) -> dict:
     """Coloca una orden GTC de compra (BUY) de YES tokens"""
     try:

@@ -283,18 +283,17 @@ class BotThread:
             if price_map:
                 tp_exits = portfolio.apply_price_updates(price_map)
 
-        # 4b. Colocar sells al precio de mercado para TP exits (HTTP, sin lock)
+        # 4b. Venta completa al precio de mercado (FOK) para TP exits (HTTP, sin lock)
         sells_done = []
         for pos_id, yes_p, tokens, token_id, allocated in tp_exits:
             if pos_id not in portfolio.positions:
                 continue  # ya cerrado (p.ej. por price thread)
             if token_id:
-                sell_price = max(round(yes_p - 0.002, 4), 0.02)
-                clob_executor.place_sell(token_id, sell_price, tokens)
+                result = clob_executor.place_market_sell(token_id, tokens)
                 log.info(
-                    "TP sell @ %.1f¢ (entrada ~%.1f¢) — %s",
-                    yes_p * 100, allocated / tokens * 100 if tokens else 0,
-                    pos_id,
+                    "TP FOK sell @ %.1f¢ detectado — %s — %s",
+                    yes_p * 100, pos_id,
+                    "ok" if result["status"] == "ok" else result.get("error"),
                 )
             sells_done.append((pos_id, yes_p, tokens, allocated))
 
@@ -407,8 +406,7 @@ class BotThread:
             if pos_id not in self.portfolio.positions:
                 continue
             if token_id:
-                sell_price = max(round(yes_p - 0.002, 4), 0.02)
-                clob_executor.place_sell(token_id, sell_price, tokens)
+                clob_executor.place_market_sell(token_id, tokens)
             sells_done.append((pos_id, yes_p, tokens, allocated))
 
         if sells_done:
