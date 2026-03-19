@@ -134,15 +134,10 @@ def fetch_live_prices(slug):
     return get_prices(m)
 
 
-def fetch_yes_price_clob(yes_token_id):
-    """
-    Precio YES en tiempo real desde el order book del CLOB (sin cache).
-    Usa best ASK; si no hay asks usa best BID como fallback.
-    Descarta si precio > 0.50 (token invertido).
-    Idéntico a clima-v2.
-    """
+def _fetch_book(yes_token_id):
+    """Retorna (bids, asks) del order book CLOB para un token."""
     if not yes_token_id:
-        return None, None
+        return [], []
     try:
         r = requests.get(
             f"{CLOB}/book",
@@ -150,26 +145,50 @@ def fetch_yes_price_clob(yes_token_id):
             timeout=(2, 3),
         )
         if r.status_code != 200:
-            return None, None
+            return [], []
         data = r.json()
-
-        bids = data.get("bids") or []
-        asks = data.get("asks") or []
-
-        yes_price = None
-        if asks:
-            yes_price = min(float(a["price"]) for a in asks)
-        elif bids:
-            yes_price = max(float(b["price"]) for b in bids)
-
-        if yes_price is None or not (0.0 < yes_price < 1.0):
-            return None, None
-
-        no_price = round(1.0 - yes_price, 6)
-        return yes_price, no_price
-
+        return data.get("bids") or [], data.get("asks") or []
     except Exception:
+        return [], []
+
+
+def fetch_yes_price_clob(yes_token_id):
+    """
+    Precio YES para scanning de nuevas oportunidades.
+    Usa best ASK (precio al que compraríamos).
+    Descarta si precio > 0.50 (token invertido).
+    """
+    bids, asks = _fetch_book(yes_token_id)
+
+    yes_price = None
+    if asks:
+        yes_price = min(float(a["price"]) for a in asks)
+    elif bids:
+        yes_price = max(float(b["price"]) for b in bids)
+
+    if yes_price is None or not (0.0 < yes_price < 1.0):
         return None, None
+
+    return yes_price, round(1.0 - yes_price, 6)
+
+
+def fetch_yes_bid_clob(yes_token_id):
+    """
+    Precio YES de venta para posiciones abiertas.
+    Usa best BID (precio real que recibiríamos al vender).
+    """
+    bids, asks = _fetch_book(yes_token_id)
+
+    yes_price = None
+    if bids:
+        yes_price = max(float(b["price"]) for b in bids)
+    elif asks:
+        yes_price = min(float(a["price"]) for a in asks)
+
+    if yes_price is None or not (0.0 < yes_price < 1.0):
+        return None, None
+
+    return yes_price, round(1.0 - yes_price, 6)
 
 
 def scan_opportunities(existing_ids=None, ignore_windows=False):

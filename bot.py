@@ -10,7 +10,7 @@ from datetime import datetime, timezone, timedelta
 
 import market_scorer
 import clob_executor
-from scanner import scan_opportunities, fetch_yes_price_clob, fetch_live_prices
+from scanner import scan_opportunities, fetch_yes_price_clob, fetch_yes_bid_clob, fetch_live_prices
 from config import (
     MONITOR_INTERVAL, PRICE_UPDATE_INTERVAL,
     MIN_YES_PRICE, MAX_YES_PRICE,
@@ -268,7 +268,7 @@ class BotThread:
                 return
             yes_p, no_p = None, None
             if clob_ok_pos and yes_tid:
-                yes_p, no_p = fetch_yes_price_clob(yes_tid)
+                yes_p, no_p = fetch_yes_bid_clob(yes_tid)  # BID: precio real de venta
                 if yes_p is not None and yes_p > 0.50:
                     yes_p, no_p = None, None
                 if yes_p is None:
@@ -388,7 +388,7 @@ class BotThread:
                 return
             yes_p, no_p = None, None
             if clob_ok and yes_tid:
-                yes_p, no_p = fetch_yes_price_clob(yes_tid)
+                yes_p, no_p = fetch_yes_bid_clob(yes_tid)  # BID: precio real de venta
                 if yes_p is not None and yes_p > 0.50:
                     yes_p, no_p = None, None
                     clob_failures += 1
