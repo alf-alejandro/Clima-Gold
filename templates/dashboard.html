@@ -3,495 +3,577 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Clima Gold — Bot de Temperatura</title>
+<title>Clima Gold</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
-  :root {
-    --bg: #0d1117; --surface: #161b22; --surface2: #21262d;
-    --border: #30363d; --text: #e6edf3; --muted: #8b949e;
-    --green: #3fb950; --red: #f85149; --amber: #d29922;
-    --blue: #58a6ff; --gold: #f0c060;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+:root {
+  --bg:#0a0e17; --surface:#111827; --surface2:#1a2235; --surface3:#1f2a3d;
+  --border:#2a3a52; --text:#e2e8f0; --muted:#64748b;
+  --green:#22c55e; --red:#ef4444; --amber:#f59e0b;
+  --blue:#3b82f6; --gold:#f0c060; --gold2:#fbbf24;
+  --radius:14px; --radius-sm:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:14px;min-height:100vh;}
 
-  /* Header */
-  .header {
-    background: linear-gradient(135deg, #1a1200 0%, var(--surface) 100%);
-    border-bottom: 1px solid var(--border);
-    padding: 16px 24px;
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-  }
-  .header h1 { font-size: 22px; font-weight: 700; color: var(--gold); letter-spacing: 1px; }
-  .header .subtitle { color: var(--muted); font-size: 12px; }
-  .badge {
-    padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
-    letter-spacing: 0.5px;
-  }
-  .badge-running { background: rgba(63,185,80,.15); color: var(--green); border: 1px solid var(--green); }
-  .badge-stopped { background: rgba(248,81,73,.1); color: var(--muted); border: 1px solid var(--border); }
-  .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-           background: var(--green); margin-right: 6px; animation: pulse 1.5s infinite; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+/* ── HEADER ── */
+.header{
+  background:linear-gradient(135deg,#0d1a2e 0%,#111827 60%,#0d1a2e 100%);
+  border-bottom:1px solid var(--border);
+  padding:14px 20px;
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  position:sticky;top:0;z-index:100;backdrop-filter:blur(10px);
+}
+.header-brand{display:flex;align-items:center;gap:10px;}
+.header-brand h1{font-size:20px;font-weight:800;color:var(--gold);letter-spacing:.5px;white-space:nowrap;}
+.header-brand .sub{color:var(--muted);font-size:11px;white-space:nowrap;}
+.header-right{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.badge{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.5px;white-space:nowrap;}
+.badge-running{background:rgba(34,197,94,.15);color:var(--green);border:1px solid rgba(34,197,94,.4);}
+.badge-stopped{background:rgba(100,116,139,.1);color:var(--muted);border:1px solid var(--border);}
+.pulse{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:5px;animation:pulse 1.5s infinite;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
+#lastUpdate{color:var(--muted);font-size:10px;}
 
-  /* Layout */
-  .main { max-width: 1400px; margin: 0 auto; padding: 20px; }
-  .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
-  .grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .grid-3c{ display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
-  @media(max-width:900px){ .grid-3,.grid-4,.grid-3c{grid-template-columns:1fr 1fr} .grid-2{grid-template-columns:1fr} }
-  @media(max-width:600px){ .grid-3,.grid-4,.grid-2,.grid-3c{grid-template-columns:1fr} }
+/* ── LAYOUT ── */
+.main{max-width:1440px;margin:0 auto;padding:16px;}
+.gap{display:flex;flex-direction:column;gap:14px;}
 
-  /* Cards */
-  .card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 10px; padding: 16px;
-  }
-  .card-title { font-size: 11px; color: var(--muted); text-transform: uppercase;
-                letter-spacing: 1px; margin-bottom: 8px; }
-  .kpi-value { font-size: 26px; font-weight: 700; color: var(--text); }
-  .kpi-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
-  .green { color: var(--green); }
-  .red   { color: var(--red); }
-  .amber { color: var(--amber); }
-  .gold  { color: var(--gold); }
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.grid-charts{display:grid;grid-template-columns:2fr 1fr;gap:12px;}
 
-  /* Botones de control */
-  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 16px 0; }
-  .btn {
-    padding: 9px 18px; border-radius: 8px; border: none; cursor: pointer;
-    font-size: 13px; font-weight: 600; transition: all .15s; letter-spacing: .3px;
-  }
-  .btn:disabled { opacity: .4; cursor: not-allowed; }
-  .btn-start  { background: var(--green); color: #000; }
-  .btn-stop   { background: var(--red);   color: #fff; }
-  .btn-gold   { background: var(--gold);  color: #000; }
-  .btn-blue   { background: var(--blue);  color: #000; }
-  .btn-outline{ background: transparent; color: var(--text); border: 1px solid var(--border); }
-  .btn:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-1px); }
+@media(max-width:1100px){.grid-4{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:900px){
+  .grid-3{grid-template-columns:repeat(2,1fr);}
+  .grid-charts{grid-template-columns:1fr;}
+}
+@media(max-width:600px){
+  .main{padding:10px;}
+  .grid-4,.grid-3,.grid-2{grid-template-columns:1fr 1fr;}
+  .grid-charts{grid-template-columns:1fr;}
+  .header{padding:10px 14px;}
+  .header-brand h1{font-size:17px;}
+}
+@media(max-width:380px){
+  .grid-4,.grid-3,.grid-2{grid-template-columns:1fr;}
+}
 
-  /* Spinner */
-  .spinner { display:none; width:16px;height:16px;border:2px solid var(--border);
-             border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;
-             vertical-align:middle;margin-left:8px; }
-  @keyframes spin { to{transform:rotate(360deg)} }
+/* ── CARDS ── */
+.card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:16px;
+}
+.card-sm{padding:12px 14px;}
+.card-title{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;font-weight:600;}
+.kpi-value{font-size:24px;font-weight:800;line-height:1.1;}
+.kpi-sub{font-size:11px;color:var(--muted);margin-top:4px;}
 
-  /* Status bar */
-  .status-bar {
-    background: var(--surface2); border: 1px solid var(--border);
-    border-radius: 8px; padding: 10px 14px; margin-bottom: 16px;
-    font-size: 12px; color: var(--muted);
-    display: flex; gap: 20px; flex-wrap: wrap;
-  }
+/* ── KPI ACCENT ── */
+.kpi-card{position:relative;overflow:hidden;}
+.kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent,var(--gold));border-radius:var(--radius) var(--radius) 0 0;}
 
-  /* Tablas */
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th { color: var(--muted); font-weight: 600; padding: 8px 10px; text-align: left;
-       border-bottom: 1px solid var(--border); text-transform: uppercase; font-size: 10px; letter-spacing: .8px; }
-  td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
-  tr:last-child td { border-bottom: none; }
-  tr:hover td { background: rgba(255,255,255,.02); }
+/* ── COLORS ── */
+.green{color:var(--green);}
+.red{color:var(--red);}
+.amber{color:var(--amber);}
+.gold{color:var(--gold);}
+.muted{color:var(--muted);}
 
-  /* Progress bar */
-  .progress-wrap { background: var(--border); border-radius: 4px; height: 5px; min-width: 60px; }
-  .progress-fill { height: 100%; border-radius: 4px; background: var(--gold); transition: width .5s; }
+/* ── CONTROLES ── */
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.btn{
+  padding:9px 18px;border-radius:var(--radius-sm);border:none;cursor:pointer;
+  font-size:13px;font-weight:600;transition:all .15s;letter-spacing:.2px;
+  display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+}
+.btn:disabled{opacity:.35;cursor:not-allowed;}
+.btn-start{background:var(--green);color:#000;}
+.btn-stop{background:var(--red);color:#fff;}
+.btn-outline{background:transparent;color:var(--text);border:1px solid var(--border);}
+.btn:hover:not(:disabled){filter:brightness(1.12);transform:translateY(-1px);}
+.btn:active:not(:disabled){transform:translateY(0);}
 
-  /* Status pills */
-  .pill { padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; }
-  .pill-pending { background: rgba(210,153,34,.15); color: var(--amber); }
-  .pill-active  { background: rgba(63,185,80,.15);  color: var(--green); }
-  .pill-won     { background: rgba(88,166,255,.15); color: var(--blue);  }
-  .pill-lost    { background: rgba(248,81,73,.15);  color: var(--red);   }
-  .pill-force   { background: rgba(139,148,158,.15);color: var(--muted); }
+/* ── STATUS TICKER ── */
+.ticker{
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:8px 14px;
+  font-size:11px;color:var(--muted);
+  display:flex;gap:16px;flex-wrap:wrap;align-items:center;
+  overflow-x:auto;white-space:nowrap;
+}
+.ticker strong{color:var(--text);}
 
-  /* Chart */
-  .chart-wrap { position: relative; height: 200px; }
+/* ── TABLAS ── */
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{color:var(--muted);font-weight:600;padding:8px 10px;text-align:left;
+   border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.8px;white-space:nowrap;}
+td{padding:9px 10px;border-bottom:1px solid rgba(42,58,82,.5);vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:rgba(255,255,255,.02);}
 
-  /* Section header */
-  .section-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
-  .section-title { font-size: 14px; font-weight: 600; color: var(--text); }
-  .count-badge { background: var(--surface2); border: 1px solid var(--border);
-                 color: var(--muted); padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+/* ── POSICION CARD (mobile) ── */
+.pos-cards{display:none;flex-direction:column;gap:8px;}
+.pos-card{
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:12px;
+}
+.pos-card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;}
+.pos-card-city{font-weight:700;font-size:13px;}
+.pos-card-temp{color:var(--amber);font-size:11px;margin-top:2px;}
+.pos-card-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-size:11px;}
+.pos-card-label{color:var(--muted);font-size:10px;}
+.pos-card-val{font-weight:600;}
+.pos-card-footer{margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:8px;}
 
-  .empty { text-align: center; color: var(--muted); padding: 24px; font-size: 12px; }
-  .mt { margin-top: 16px; }
-  .mb { margin-bottom: 16px; }
+@media(max-width:700px){
+  .table-desktop{display:none!important;}
+  .pos-cards{display:flex;}
+}
+
+/* ── PROGRESS ── */
+.progress-wrap{background:rgba(42,58,82,.8);border-radius:4px;height:4px;min-width:50px;overflow:hidden;}
+.progress-fill{height:100%;border-radius:4px;transition:width .6s ease;}
+.progress-positive{background:linear-gradient(90deg,var(--amber),var(--gold));}
+.progress-negative{background:var(--red);}
+.progress-label{font-size:10px;color:var(--muted);margin-top:2px;white-space:nowrap;}
+
+/* ── PILLS ── */
+.pill{padding:3px 9px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap;}
+.pill-pending{background:rgba(245,158,11,.15);color:var(--amber);border:1px solid rgba(245,158,11,.3);}
+.pill-active{background:rgba(34,197,94,.15);color:var(--green);border:1px solid rgba(34,197,94,.3);}
+.pill-won{background:rgba(59,130,246,.15);color:var(--blue);border:1px solid rgba(59,130,246,.3);}
+.pill-lost{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3);}
+.pill-force{background:rgba(100,116,139,.15);color:var(--muted);border:1px solid var(--border);}
+
+/* ── SECTION HEADER ── */
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.section-title{font-size:13px;font-weight:700;color:var(--text);}
+.count-badge{background:var(--surface3);border:1px solid var(--border);color:var(--muted);
+             padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;}
+
+/* ── CHART ── */
+.chart-wrap{position:relative;height:190px;}
+
+/* ── EMPTY ── */
+.empty{text-align:center;color:var(--muted);padding:28px;font-size:12px;}
+
+/* ── OPP ITEMS ── */
+.opp-item{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:7px 0;border-bottom:1px solid rgba(42,58,82,.4);gap:8px;
+}
+.opp-item:last-child{border-bottom:none;}
+.opp-city{font-size:12px;font-weight:600;min-width:80px;}
+.opp-price{font-size:12px;font-weight:700;}
+.opp-score{font-size:11px;font-weight:700;min-width:28px;text-align:right;}
+
+/* ── SCORE BAR ── */
+.score-bar{display:inline-flex;gap:2px;align-items:center;}
+.score-dot{width:6px;height:6px;border-radius:50%;background:var(--border);}
+.score-dot.on{background:var(--gold);}
 </style>
 </head>
 <body>
 
 <!-- HEADER -->
 <div class="header">
-  <div>
-    <h1>⚡ CLIMA GOLD</h1>
-    <div class="subtitle">Bot de Temperatura — Polymarket · 8 Ciudades Globales</div>
+  <div class="header-brand">
+    <div>
+      <h1>⚡ CLIMA GOLD</h1>
+      <div class="sub">Polymarket · Weather Bot</div>
+    </div>
   </div>
   <span id="botBadge" class="badge badge-stopped">⏹ Detenido</span>
-  <span id="statusMsg" style="color:var(--muted);font-size:12px;">—</span>
-  <div style="margin-left:auto;color:var(--muted);font-size:11px;" id="lastUpdate">—</div>
+  <span id="statusMsg" style="color:var(--muted);font-size:11px;"></span>
+  <div class="header-right">
+    <span id="lastUpdate"></span>
+  </div>
 </div>
 
 <div class="main">
+<div class="gap">
 
-  <!-- CONTROLES DEL BOT -->
+  <!-- CONTROLES -->
   <div class="controls">
-    <button class="btn btn-start" id="btnStart" onclick="startBot()">▶ Iniciar Bot</button>
-    <button class="btn btn-stop"  id="btnStop"  onclick="stopBot()" disabled>⏹ Detener Bot</button>
-    <button class="btn btn-outline" onclick="cancelAllOrders()" title="Cancela todas las órdenes límite abiertas sin cerrar posiciones">
-      🗑 Cancelar Órdenes
-    </button>
+    <button class="btn btn-start" id="btnStart" onclick="startBot()">▶ Iniciar</button>
+    <button class="btn btn-stop"  id="btnStop"  onclick="stopBot()" disabled>⏹ Detener</button>
+    <button class="btn btn-outline" onclick="cancelAllOrders()">🗑 Cancelar Órdenes</button>
   </div>
 
-  <!-- STATUS BAR -->
-  <div class="status-bar">
-    <span>📊 Capital rastreado: <strong id="statCapital">—</strong></span>
-    <span>📈 P&amp;L Total: <strong id="statPnl">—</strong></span>
+  <!-- TICKER -->
+  <div class="ticker">
+    <span>💰 Capital: <strong id="statCapital">—</strong></span>
+    <span>📈 P&L: <strong id="statPnl">—</strong></span>
     <span>🏆 Win Rate: <strong id="statWinRate">—</strong></span>
-    <span>📁 Posiciones: <strong id="statOpen">—</strong> abiertas</span>
-    <span>🔄 Escaneos: <strong id="statScans">—</strong></span>
-    <span>⏱ Último scan: <strong id="statLastScan">—</strong></span>
+    <span>📂 Abiertas: <strong id="statOpen">—</strong></span>
+    <span>🔄 Scans: <strong id="statScans">—</strong></span>
+    <span>⏱ <strong id="statLastScan">—</strong></span>
   </div>
 
-  <!-- KPIs fila 1 -->
-  <div class="grid-4 mb">
-    <div class="card">
-      <div class="card-title">Portfolio Total</div>
+  <!-- KPIs FILA 1 -->
+  <div class="grid-4">
+    <div class="card card-sm kpi-card" style="--accent:var(--gold)">
+      <div class="card-title">Portfolio</div>
       <div class="kpi-value gold" id="kpiCapital">—</div>
-      <div class="kpi-sub" id="kpiCapitalSub">USDC libre: — · Posiciones: —</div>
+      <div class="kpi-sub" id="kpiCapitalSub">libre — · pos —</div>
     </div>
-    <div class="card">
-      <div class="card-title">P&amp;L Neto</div>
+    <div class="card card-sm kpi-card" style="--accent:var(--green)">
+      <div class="card-title">P&L Neto</div>
       <div class="kpi-value" id="kpiPnl">—</div>
-      <div class="kpi-sub" id="kpiRoi">ROI: —</div>
+      <div class="kpi-sub" id="kpiRoi">ROI —</div>
     </div>
-    <div class="card">
+    <div class="card card-sm kpi-card" style="--accent:var(--blue)">
       <div class="card-title">Win Rate</div>
       <div class="kpi-value" id="kpiWinRate">—</div>
-      <div class="kpi-sub" id="kpiWL">W/L: —</div>
+      <div class="kpi-sub" id="kpiWL">W/L — / —</div>
     </div>
-    <div class="card">
-      <div class="card-title">Posiciones Abiertas</div>
+    <div class="card card-sm kpi-card" style="--accent:var(--amber)">
+      <div class="card-title">Posiciones</div>
       <div class="kpi-value" id="kpiOpen">—</div>
-      <div class="kpi-sub">de 20 máximo</div>
+      <div class="kpi-sub">máx 20</div>
     </div>
   </div>
 
-  <!-- KPIs fila 2 -->
-  <div class="grid-3c mb">
-    <div class="card">
+  <!-- KPIs FILA 2 -->
+  <div class="grid-3">
+    <div class="card card-sm kpi-card" style="--accent:var(--green)">
       <div class="card-title">Profit Factor</div>
       <div class="kpi-value" id="kpiPF">—</div>
-      <div class="kpi-sub" id="kpiPFsub">Bruto ganado / Bruto perdido</div>
+      <div class="kpi-sub" id="kpiPFsub">ganado / perdido</div>
     </div>
-    <div class="card">
+    <div class="card card-sm kpi-card" style="--accent:var(--red)">
       <div class="card-title">Max Drawdown</div>
       <div class="kpi-value" id="kpiDD">—</div>
-      <div class="kpi-sub">Caída máxima desde pico</div>
+      <div class="kpi-sub">caída máxima desde pico</div>
     </div>
-    <div class="card">
+    <div class="card card-sm kpi-card" style="--accent:var(--blue)">
       <div class="card-title">Trades Cerrados</div>
       <div class="kpi-value" id="kpiTrades">—</div>
-      <div class="kpi-sub" id="kpiGross">Ganado: — · Perdido: —</div>
+      <div class="kpi-sub" id="kpiGross">✅ — · ❌ —</div>
     </div>
   </div>
 
-  <!-- CHARTS -->
-  <div class="grid-3c mb">
-    <div class="card">
-      <div class="section-header">
-        <div class="section-title">📈 Evolución del Capital</div>
+  <!-- CHARTS + OPORTUNIDADES -->
+  <div class="grid-charts">
+    <div class="grid-2">
+      <div class="card">
+        <div class="section-header">
+          <div class="section-title">📈 Capital</div>
+        </div>
+        <div class="chart-wrap"><canvas id="capitalChart"></canvas></div>
       </div>
-      <div class="chart-wrap">
-        <canvas id="capitalChart"></canvas>
-      </div>
-    </div>
-    <div class="card">
-      <div class="section-header">
-        <div class="section-title">🏙 P&amp;L por Ciudad</div>
-      </div>
-      <div class="chart-wrap">
-        <canvas id="cityChart"></canvas>
+      <div class="card">
+        <div class="section-header">
+          <div class="section-title">🏙 P&L Ciudad</div>
+        </div>
+        <div class="chart-wrap"><canvas id="cityChart"></canvas></div>
       </div>
     </div>
     <div class="card">
       <div class="section-header">
-        <div class="section-title">🌡 Oportunidades Detectadas</div>
+        <div class="section-title">🌡 Oportunidades</div>
         <span class="count-badge" id="oppCount">0</span>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Ciudad</th><th>Precio YES</th><th>Score</th><th>Volumen</th>
-          </tr>
-        </thead>
-        <tbody id="oppTable">
-          <tr><td colspan="4" class="empty">Sin datos aún</td></tr>
-        </tbody>
-      </table>
+      <div id="oppList"><div class="empty">Sin datos</div></div>
     </div>
   </div>
 
   <!-- POSICIONES ABIERTAS -->
-  <div class="card mb">
+  <div class="card">
     <div class="section-header">
       <div class="section-title">📂 Posiciones Abiertas</div>
       <span class="count-badge" id="openCount">0</span>
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th>ID</th><th>Ciudad</th><th>Entrada</th><th>Precio Actual</th>
-          <th>Tokens</th><th>USDC Invertido</th><th>Progreso TP</th><th>Estado</th>
-        </tr>
-      </thead>
-      <tbody id="openTable">
-        <tr><td colspan="8" class="empty">Sin posiciones abiertas</td></tr>
-      </tbody>
-    </table>
+    <!-- Desktop table -->
+    <div class="table-wrap table-desktop">
+      <table>
+        <thead><tr>
+          <th>ID</th><th>Ciudad / Temp</th><th>Entrada</th><th>Actual</th>
+          <th>Tokens</th><th>Invertido</th><th>Progreso TP</th><th>Estado</th>
+        </tr></thead>
+        <tbody id="openTable"><tr><td colspan="8" class="empty">Sin posiciones</td></tr></tbody>
+      </table>
+    </div>
+    <!-- Mobile cards -->
+    <div class="pos-cards" id="openCards"></div>
   </div>
 
-  <!-- HISTORIAL CERRADAS -->
-  <div class="card mb">
+  <!-- HISTORIAL -->
+  <div class="card">
     <div class="section-header">
-      <div class="section-title">📋 Historial de Trades</div>
+      <div class="section-title">📋 Historial</div>
       <div style="display:flex;gap:8px;align-items:center;">
         <span class="count-badge" id="closedCount">0</span>
-        <a href="/api/trades.csv" download class="btn btn-outline" style="padding:4px 10px;font-size:11px;text-decoration:none;">
-          ⬇ CSV
-        </a>
+        <a href="/api/trades.csv" download class="btn btn-outline" style="padding:5px 10px;font-size:11px;text-decoration:none;">⬇ CSV</a>
       </div>
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Ciudad</th><th>Entrada</th><th>Salida</th>
-          <th>P&amp;L</th><th>Resultado</th><th>Fecha</th>
-        </tr>
-      </thead>
-      <tbody id="closedTable">
-        <tr><td colspan="6" class="empty">Sin trades cerrados</td></tr>
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Ciudad</th><th>Entrada</th><th>Salida</th><th>P&L</th><th>Resultado</th><th>Fecha</th>
+        </tr></thead>
+        <tbody id="closedTable"><tr><td colspan="6" class="empty">Sin trades</td></tr></tbody>
+      </table>
+    </div>
   </div>
 
   <!-- ERRORES -->
   <div class="card" id="errorSection" style="display:none">
-    <div class="section-title" style="color:var(--red);margin-bottom:8px;">⚠️ Errores Recientes</div>
-    <div id="errorList" style="font-family:monospace;font-size:11px;color:var(--red)"></div>
+    <div class="section-title" style="color:var(--red);margin-bottom:8px;">⚠️ Errores</div>
+    <div id="errorList" style="font-family:monospace;font-size:11px;color:var(--red);"></div>
   </div>
 
-</div><!-- /main -->
+</div>
+</div>
 
 <script>
-// ─── Capital Chart ────────────────────────────────────────────────────────────
-const ctx = document.getElementById('capitalChart').getContext('2d');
-let capitalChart = new Chart(ctx, {
-  type: 'line',
-  data: { labels: [], datasets: [{
-    data: [], borderColor: '#f0c060', backgroundColor: 'rgba(240,192,96,.08)',
-    borderWidth: 2, fill: true, tension: 0.4, pointRadius: 2, pointHoverRadius: 4,
+// ── Charts ────────────────────────────────────────────────────────────────────
+const chartDefaults = {
+  responsive:true, maintainAspectRatio:false,
+  animation:{duration:300},
+  plugins:{legend:{display:false}},
+};
+
+let capitalChart = new Chart(document.getElementById('capitalChart').getContext('2d'), {
+  type:'line',
+  data:{labels:[],datasets:[{
+    data:[], borderColor:'#f0c060', backgroundColor:'rgba(240,192,96,.07)',
+    borderWidth:2, fill:true, tension:0.4, pointRadius:0, pointHoverRadius:4,
   }]},
-  options: {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false }, tooltip: {
-      callbacks: { label: c => ` $${c.parsed.y.toFixed(2)} USDC` }
-    }},
-    scales: {
-      x: { ticks: { color:'#8b949e', maxTicksLimit:5, font:{size:10} }, grid: { color:'#21262d' } },
-      y: { ticks: { color:'#8b949e', callback: v=>`$${v}` }, grid: { color:'#21262d' } }
+  options:{
+    ...chartDefaults,
+    plugins:{...chartDefaults.plugins, tooltip:{callbacks:{label:c=>` $${c.parsed.y.toFixed(2)}`}}},
+    scales:{
+      x:{ticks:{color:'#64748b',maxTicksLimit:4,font:{size:10}},grid:{color:'rgba(42,58,82,.5)'}},
+      y:{ticks:{color:'#64748b',callback:v=>`$${v}`,font:{size:10}},grid:{color:'rgba(42,58,82,.5)'}},
     }
   }
 });
 
-// ─── City Chart ──────────────────────────────────────────────────────────────
 let cityChart = null;
-function renderCityChart(cityStats) {
-  const cities = Object.keys(cityStats);
+function renderCityChart(cs) {
+  const cities = Object.keys(cs);
   if (!cities.length) return;
-  const pnls   = cities.map(c => cityStats[c].pnl);
-  const colors = pnls.map(p => p >= 0 ? 'rgba(63,185,80,0.75)' : 'rgba(248,81,73,0.75)');
+  const pnls   = cities.map(c => cs[c].pnl);
+  const colors = pnls.map(p => p>=0 ? 'rgba(34,197,94,.7)' : 'rgba(239,68,68,.7)');
   if (cityChart) {
-    cityChart.data.labels = cities;
-    cityChart.data.datasets[0].data = pnls;
-    cityChart.data.datasets[0].backgroundColor = colors;
-    cityChart.update('none');
-    return;
+    cityChart.data.labels = cities; cityChart.data.datasets[0].data = pnls;
+    cityChart.data.datasets[0].backgroundColor = colors; cityChart.update('none'); return;
   }
-  const cctx = document.getElementById('cityChart').getContext('2d');
-  cityChart = new Chart(cctx, {
-    type: 'bar',
-    data: { labels: cities, datasets: [{ data: pnls, backgroundColor: colors }] },
-    options: {
-      indexAxis: 'y',
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: {
-        callbacks: { label: c => ` $${c.parsed.x.toFixed(2)}` }
-      }},
-      scales: {
-        x: { ticks: { color:'#8b949e', callback: v=>`$${v}`, font:{size:10} }, grid: { color:'#21262d' } },
-        y: { ticks: { color:'#8b949e', font:{size:10} }, grid: { color:'#21262d' } }
+  cityChart = new Chart(document.getElementById('cityChart').getContext('2d'), {
+    type:'bar',
+    data:{labels:cities,datasets:[{data:pnls,backgroundColor:colors,borderRadius:4}]},
+    options:{
+      ...chartDefaults, indexAxis:'y',
+      plugins:{...chartDefaults.plugins, tooltip:{callbacks:{label:c=>` $${c.parsed.x.toFixed(2)}`}}},
+      scales:{
+        x:{ticks:{color:'#64748b',callback:v=>`$${v}`,font:{size:10}},grid:{color:'rgba(42,58,82,.5)'}},
+        y:{ticks:{color:'#64748b',font:{size:10}},grid:{display:false}},
       }
     }
   });
 }
 
-// ─── Utils ───────────────────────────────────────────────────────────────────
-const $ = id => document.getElementById(id);
-const fmtUSD = n => n !== null && n !== undefined ? `$${parseFloat(n).toFixed(4)}` : '—';
-const fmtPct = n => n !== null && n !== undefined ? `${parseFloat(n).toFixed(2)}%` : '—';
-const fmtTS  = s => s ? new Date(s).toLocaleTimeString('es', {hour:'2-digit',minute:'2-digit'}) : '—';
+// ── Utils ─────────────────────────────────────────────────────────────────────
+const $  = id => document.getElementById(id);
+const f4 = n  => n != null ? `$${parseFloat(n).toFixed(4)}` : '—';
+const f2 = n  => n != null ? `$${parseFloat(n).toFixed(2)}` : '—';
+const fp = n  => n != null ? `${parseFloat(n).toFixed(1)}%` : '—';
+const ft = s  => s ? new Date(s).toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'}) : '—';
+const pc = v  => v > 0 ? 'green' : v < 0 ? 'red' : '';
 
-function pnlClass(v) { return v > 0 ? 'green' : v < 0 ? 'red' : ''; }
+function extractTemp(q) {
+  const m = (q||'').match(/([\d]+-[\d]+|[\d]+)\s*°[CF]/i);
+  return m ? m[0] : null;
+}
 
-function statusPill(s) {
+function pill(s) {
   const map = {
-    pending_buy:  ['⏳ Comprando',   'pill-pending'],
-    in_position:  ['✅ Activo',      'pill-active'],
-    pending_sell: ['🎯 Vendiendo',   'pill-active'],
-    take_profit:  ['💰 Take Profit', 'pill-won'],
-    won:          ['🏆 Ganado',      'pill-won'],
-    lost:         ['❌ Perdido',     'pill-lost'],
-    force_close:  ['🔴 Forzado',     'pill-force'],
+    pending_buy: ['⏳ Comprando','pill-pending'],
+    in_position: ['✅ Activo',   'pill-active'],
+    pending_sell:['🎯 Vendiendo','pill-active'],
+    TAKE_PROFIT: ['💰 Take Profit','pill-won'],
+    WON:         ['🏆 Ganado',   'pill-won'],
+    LOST:        ['❌ Perdido',  'pill-lost'],
+    FORCE_CLOSE: ['🔴 Cierre',  'pill-force'],
+    LIQUIDATED:  ['⚡ Liquidado','pill-force'],
   };
-  const [label, cls] = map[s] || [s, 'pill-pending'];
+  const [label,cls] = map[s] || [s,'pill-pending'];
   return `<span class="pill ${cls}">${label}</span>`;
 }
 
-// ─── Bot control ─────────────────────────────────────────────────────────────
-async function startBot() {
-  const r = await fetch('/api/bot/start', {method:'POST'}).then(r=>r.json());
-  console.log(r.message);
-}
-async function stopBot() {
-  if (!confirm('¿Detener el bot? Se cancelarán las órdenes límite activas.')) return;
-  const r = await fetch('/api/bot/stop', {method:'POST'}).then(r=>r.json());
-  console.log(r.message);
-}
-async function cancelAllOrders() {
-  if (!confirm('¿Cancelar todas las órdenes límite? (No cierra posiciones ya compradas)')) return;
-  const r = await fetch('/api/cancel_all', {method:'POST'}).then(r=>r.json());
-  alert(r.ok ? '✅ Órdenes canceladas.' : '❌ Error al cancelar.');
+function progressBar(pct) {
+  const w   = Math.max(0, Math.min(100, pct));
+  const cls = pct >= 0 ? 'progress-positive' : 'progress-negative';
+  return `
+    <div class="progress-wrap"><div class="progress-fill ${cls}" style="width:${w}%"></div></div>
+    <div class="progress-label">${pct}%</div>
+  `;
 }
 
-// ─── Main refresh ─────────────────────────────────────────────────────────────
+// ── Bot control ───────────────────────────────────────────────────────────────
+async function startBot() {
+  await fetch('/api/bot/start',{method:'POST'}).then(r=>r.json());
+}
+async function stopBot() {
+  if (!confirm('¿Detener el bot?')) return;
+  await fetch('/api/bot/stop',{method:'POST'}).then(r=>r.json());
+}
+async function cancelAllOrders() {
+  if (!confirm('¿Cancelar todas las órdenes límite?')) return;
+  const r = await fetch('/api/cancel_all',{method:'POST'}).then(r=>r.json());
+  alert(r.ok ? '✅ Canceladas.' : '❌ Error.');
+}
+
+// ── Refresh ───────────────────────────────────────────────────────────────────
 async function refresh() {
   try {
     const d = await fetch('/api/status').then(r=>r.json());
     updateHeader(d);
     updateKPIs(d);
-    updateChart(d.capital_history || []);
+    updateCapitalChart(d.capital_history||[]);
     if (d.city_stats) renderCityChart(d.city_stats);
-    updateOpportunities(d.opportunities || []);
-    updateOpenPositions(d.open_positions || []);
-    updateClosedPositions(d.closed_positions || []);
-    updateErrors(d.errors || []);
-    $('lastUpdate').textContent = 'Actualizado: ' + new Date().toLocaleTimeString();
-  } catch(e) {
-    console.error('Error al actualizar:', e);
-  }
+    updateOpportunities(d.opportunities||[]);
+    updateOpenPositions(d.open_positions||[]);
+    updateClosedPositions(d.closed_positions||[]);
+    updateErrors(d.errors||[]);
+    $('lastUpdate').textContent = new Date().toLocaleTimeString();
+  } catch(e) { console.error(e); }
 }
 
 function updateHeader(d) {
-  const running = d.bot_running;
-  $('botBadge').className = `badge ${running ? 'badge-running' : 'badge-stopped'}`;
-  $('botBadge').innerHTML = running
-    ? '<span class="pulse"></span>Activo'
-    : '⏹ Detenido';
-  $('statusMsg').textContent = d.bot_status || '—';
-  $('btnStart').disabled = running;
-  $('btnStop').disabled  = !running;
+  const run = d.bot_running;
+  $('botBadge').className = `badge ${run?'badge-running':'badge-stopped'}`;
+  $('botBadge').innerHTML = run ? '<span class="pulse"></span>Activo' : '⏹ Detenido';
+  $('statusMsg').textContent = d.bot_status||'';
+  $('btnStart').disabled = run;
+  $('btnStop').disabled  = !run;
 }
 
 function updateKPIs(d) {
-  const pnl = parseFloat(d.total_pnl || 0);
-  // Fila 1
-  $('kpiCapital').textContent = fmtUSD(d.total_portfolio ?? d.capital);
-  $('kpiCapitalSub').textContent = `USDC libre: ${fmtUSD(d.capital)} · Posiciones: ${fmtUSD(d.positions_value)}`;
-  $('kpiPnl').textContent = fmtUSD(pnl);
-  $('kpiPnl').className = `kpi-value ${pnlClass(pnl)}`;
-  $('kpiRoi').textContent = `ROI: ${fmtPct(d.roi_pct)}`;
-  $('kpiWinRate').textContent = `${d.win_rate || 0}%`;
-  $('kpiWL').textContent = `W/L: ${d.wins || 0} / ${d.losses || 0}`;
-  $('kpiOpen').textContent = d.open_count || 0;
-  // Fila 2 — nuevas métricas
+  const pnl = parseFloat(d.total_pnl||0);
+  $('kpiCapital').textContent    = f2(d.total_portfolio??d.capital);
+  $('kpiCapitalSub').textContent = `libre ${f2(d.capital)} · pos ${f2(d.positions_value)}`;
+  $('kpiPnl').textContent        = f2(pnl);
+  $('kpiPnl').className          = `kpi-value ${pc(pnl)}`;
+  $('kpiRoi').textContent        = `ROI ${fp(d.roi_pct)}`;
+  $('kpiWinRate').textContent    = `${d.win_rate||0}%`;
+  $('kpiWL').textContent         = `W/L ${d.wins||0} / ${d.losses||0}`;
+  $('kpiOpen').textContent       = d.open_count||0;
+
   const pf = d.profit_factor;
-  $('kpiPF').textContent = pf !== null && pf !== undefined ? pf.toFixed(2) : '—';
-  $('kpiPF').className = `kpi-value ${pf >= 1.5 ? 'green' : pf >= 1 ? 'amber' : 'red'}`;
-  $('kpiPFsub').textContent = `Ganado $${(d.gross_wins||0).toFixed(2)} / Perdido $${(d.gross_losses||0).toFixed(2)}`;
-  const dd = d.max_drawdown_pct || 0;
+  $('kpiPF').textContent   = pf!=null ? pf.toFixed(2) : '—';
+  $('kpiPF').className     = `kpi-value ${pf>=1.5?'green':pf>=1?'amber':'red'}`;
+  $('kpiPFsub').textContent= `$${(d.gross_wins||0).toFixed(2)} / $${(d.gross_losses||0).toFixed(2)}`;
+
+  const dd = d.max_drawdown_pct||0;
   $('kpiDD').textContent = `${dd.toFixed(1)}%`;
-  $('kpiDD').className = `kpi-value ${dd < 10 ? 'green' : dd < 25 ? 'amber' : 'red'}`;
-  const total = (d.wins || 0) + (d.losses || 0);
+  $('kpiDD').className   = `kpi-value ${dd<10?'green':dd<25?'amber':'red'}`;
+
+  const total = (d.wins||0)+(d.losses||0);
   $('kpiTrades').textContent = total;
-  $('kpiGross').textContent = `✅ ${d.wins || 0} ganados · ❌ ${d.losses || 0} perdidos`;
-  // status bar
-  $('statCapital').textContent = fmtUSD(d.capital);
-  $('statPnl').textContent = fmtUSD(pnl);
-  $('statPnl').className = pnlClass(pnl);
-  $('statWinRate').textContent = `${d.win_rate || 0}%`;
-  $('statOpen').textContent = d.open_count || 0;
-  $('statScans').textContent = d.scan_count || 0;
-  $('statLastScan').textContent = fmtTS(d.last_scan);
+  $('kpiGross').textContent  = `✅ ${d.wins||0} · ❌ ${d.losses||0}`;
+
+  $('statCapital').textContent  = f2(d.capital);
+  $('statPnl').textContent      = f2(pnl);
+  $('statPnl').className        = pc(pnl);
+  $('statWinRate').textContent  = `${d.win_rate||0}%`;
+  $('statOpen').textContent     = d.open_count||0;
+  $('statScans').textContent    = d.scan_count||0;
+  $('statLastScan').textContent = ft(d.last_scan);
 }
 
-function updateChart(history) {
+function updateCapitalChart(history) {
   if (!history.length) return;
-  const labels = history.map(h => fmtTS(h.ts));
-  const data   = history.map(h => h.capital);
-  capitalChart.data.labels = labels;
-  capitalChart.data.datasets[0].data = data;
+  capitalChart.data.labels              = history.map(h=>ft(h.ts));
+  capitalChart.data.datasets[0].data   = history.map(h=>h.capital);
   capitalChart.update('none');
 }
 
 function updateOpportunities(opps) {
   $('oppCount').textContent = opps.length;
-  const tb = $('oppTable');
-  if (!opps.length) {
-    tb.innerHTML = '<tr><td colspan="4" class="empty">Sin oportunidades detectadas</td></tr>';
-    return;
-  }
-  tb.innerHTML = opps.map(o => `
-    <tr>
-      <td>🏙 ${o.city}</td>
-      <td class="${o.yes_price < 0.08 ? 'green' : 'amber'}">${o.yes_price.toFixed(4)}</td>
-      <td><strong style="color:${o.score>=70?'#3fb950':o.score>=60?'#d29922':'#8b949e'}">${o.score}</strong></td>
-      <td>${(o.volume||0).toLocaleString()}</td>
-    </tr>
-  `).join('');
+  const el = $('oppList');
+  if (!opps.length) { el.innerHTML='<div class="empty">Sin oportunidades</div>'; return; }
+  el.innerHTML = opps.slice(0,12).map(o => {
+    const scoreColor = o.score>=70?'var(--green)':o.score>=60?'var(--amber)':'var(--muted)';
+    const dots = [1,2,3,4,5].map(i=>`<span class="score-dot ${o.score>=i*20?'on':''}"></span>`).join('');
+    const temp = extractTemp(o.question||'');
+    return `
+      <div class="opp-item">
+        <div>
+          <div class="opp-city">🏙 ${o.city}</div>
+          ${temp?`<div style="font-size:10px;color:var(--amber)">🌡 ${temp}</div>`:''}
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="opp-price ${o.yes_price<0.08?'green':'amber'}">${(o.yes_price*100).toFixed(1)}¢</span>
+          <span class="opp-score" style="color:${scoreColor}">${o.score}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 function updateOpenPositions(positions) {
   $('openCount').textContent = positions.length;
+
+  // Desktop table
   const tb = $('openTable');
   if (!positions.length) {
     tb.innerHTML = '<tr><td colspan="8" class="empty">Sin posiciones abiertas</td></tr>';
+    $('openCards').innerHTML = '<div class="empty">Sin posiciones abiertas</div>';
     return;
   }
+
   tb.innerHTML = positions.map(p => {
-    const tp = 0.15;
-    const entry = p.entry_yes || 0;
-    const cur   = p.current_yes || entry;
-    const pct   = Math.min(100, Math.round((cur - entry) / (tp - entry) * 100));
+    const entry = p.entry_yes||0, cur = p.current_yes||entry;
+    const pct   = Math.min(100, Math.round((cur-entry)/(0.15-entry)*100));
     const diff  = cur - entry;
-    const tempMatch = (p.question || '').match(/([\d]+-[\d]+|[\d]+)\s*°[CF]/i);
-    const tempLabel = tempMatch ? `<br><span style="color:var(--amber);font-size:11px">🌡 ${tempMatch[0]}</span>` : '';
+    const temp  = extractTemp(p.question);
     return `
       <tr>
-        <td style="font-family:monospace;font-size:11px">${p.pos_id}</td>
-        <td>🏙 ${p.city}${tempLabel}</td>
-        <td>${entry.toFixed(4)}</td>
-        <td class="${diff>0?'green':diff<0?'red':''}">${cur.toFixed(4)}</td>
-        <td>${(p.tokens||0).toFixed(1)}</td>
-        <td>${fmtUSD(p.allocated)}</td>
+        <td style="font-family:monospace;font-size:10px;color:var(--muted)">${p.pos_id}</td>
         <td>
-          <div class="progress-wrap">
-            <div class="progress-fill" style="width:${Math.max(0,pct)}%"></div>
-          </div>
-          <span style="font-size:10px;color:var(--muted)">${pct}%</span>
+          <span style="font-weight:600">🏙 ${p.city}</span>
+          ${temp?`<br><span style="color:var(--amber);font-size:10px">🌡 ${temp}</span>`:''}
         </td>
-        <td>${statusPill(p.status)}</td>
+        <td style="font-weight:600">${(entry*100).toFixed(1)}¢</td>
+        <td class="${diff>0?'green':diff<0?'red':''}" style="font-weight:700">${(cur*100).toFixed(1)}¢</td>
+        <td class="muted">${(p.tokens||0).toFixed(1)}</td>
+        <td style="font-weight:600">${f2(p.allocated)}</td>
+        <td style="min-width:90px">${progressBar(pct)}</td>
+        <td>${pill(p.status)}</td>
       </tr>
+    `;
+  }).join('');
+
+  // Mobile cards
+  $('openCards').innerHTML = positions.map(p => {
+    const entry = p.entry_yes||0, cur = p.current_yes||entry;
+    const pct   = Math.min(100, Math.round((cur-entry)/(0.15-entry)*100));
+    const diff  = cur - entry;
+    const temp  = extractTemp(p.question);
+    return `
+      <div class="pos-card">
+        <div class="pos-card-header">
+          <div>
+            <div class="pos-card-city">🏙 ${p.city}</div>
+            ${temp?`<div class="pos-card-temp">🌡 ${temp}</div>`:''}
+          </div>
+          ${pill(p.status)}
+        </div>
+        <div class="pos-card-grid">
+          <div><div class="pos-card-label">Entrada</div><div class="pos-card-val">${(entry*100).toFixed(1)}¢</div></div>
+          <div><div class="pos-card-label">Actual</div><div class="pos-card-val ${diff>0?'green':diff<0?'red':''}">${(cur*100).toFixed(1)}¢</div></div>
+          <div><div class="pos-card-label">Invertido</div><div class="pos-card-val">${f2(p.allocated)}</div></div>
+        </div>
+        <div class="pos-card-footer">
+          ${progressBar(pct)}
+        </div>
+      </div>
     `;
   }).join('');
 }
@@ -499,22 +581,21 @@ function updateOpenPositions(positions) {
 function updateClosedPositions(positions) {
   $('closedCount').textContent = positions.length;
   const tb = $('closedTable');
-  if (!positions.length) {
-    tb.innerHTML = '<tr><td colspan="6" class="empty">Sin trades cerrados</td></tr>';
-    return;
-  }
+  if (!positions.length) { tb.innerHTML='<tr><td colspan="6" class="empty">Sin trades</td></tr>'; return; }
   tb.innerHTML = positions.slice(0,20).map(p => {
-    const pnl = p.pnl || 0;
-    const tempMatch = (p.question || '').match(/(\d+)\s*°C/i);
-    const tempLabel = tempMatch ? ` <span style="color:var(--amber);font-size:11px">🌡 ${tempMatch[0]}</span>` : '';
+    const pnl  = p.pnl||0;
+    const temp = extractTemp(p.question);
     return `
       <tr>
-        <td>🏙 ${p.city}${tempLabel}</td>
-        <td>${(p.entry_yes||0).toFixed(4)}</td>
-        <td>${(p.exit_yes||0).toFixed(4)}</td>
-        <td class="${pnlClass(pnl)}">${fmtUSD(pnl)}</td>
-        <td>${statusPill(p.reason)}</td>
-        <td style="color:var(--muted)">${fmtTS(p.closed_at)}</td>
+        <td>
+          <span style="font-weight:600">🏙 ${p.city}</span>
+          ${temp?` <span style="color:var(--amber);font-size:10px">🌡 ${temp}</span>`:''}
+        </td>
+        <td>${(( p.entry_yes||0)*100).toFixed(1)}¢</td>
+        <td>${((p.exit_yes ||0)*100).toFixed(1)}¢</td>
+        <td class="${pc(pnl)}" style="font-weight:700">${f2(pnl)}</td>
+        <td>${pill(p.reason)}</td>
+        <td class="muted">${ft(p.closed_at)}</td>
       </tr>
     `;
   }).join('');
@@ -523,11 +604,10 @@ function updateClosedPositions(positions) {
 function updateErrors(errors) {
   const sec = $('errorSection');
   if (!errors.length) { sec.style.display='none'; return; }
-  sec.style.display = 'block';
+  sec.style.display='block';
   $('errorList').innerHTML = errors.map(e=>`<div>• ${e}</div>`).join('');
 }
 
-// ─── Inicio ───────────────────────────────────────────────────────────────────
 refresh();
 setInterval(refresh, 5000);
 </script>
