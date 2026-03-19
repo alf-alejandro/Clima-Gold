@@ -474,7 +474,7 @@ function updateOpenPositions(positions) {
     const cur   = p.current_yes || entry;
     const pct   = Math.min(100, Math.round((cur - entry) / (tp - entry) * 100));
     const diff  = cur - entry;
-    const tempMatch = (p.question || '').match(/(\d+)\s*°C/i);
+    const tempMatch = (p.question || '').match(/([\d]+-[\d]+|[\d]+)\s*°[CF]/i);
     const tempLabel = tempMatch ? `<br><span style="color:var(--amber);font-size:11px">🌡 ${tempMatch[0]}</span>` : '';
     return `
       <tr>
