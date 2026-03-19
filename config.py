@@ -36,7 +36,7 @@ POSITION_SIZE_MAX = float(os.environ.get("POSITION_SIZE_MAX", 0.030))
 # ── Parámetros de escaneo ─────────────────────────────────────────────────────
 MIN_VOLUME            = float(os.environ.get("MIN_VOLUME",             200))
 MONITOR_INTERVAL      = int(os.environ.get("MONITOR_INTERVAL",          30))
-PRICE_UPDATE_INTERVAL = int(os.environ.get("PRICE_UPDATE_INTERVAL",     10))
+PRICE_UPDATE_INTERVAL = int(os.environ.get("PRICE_UPDATE_INTERVAL",      5))
 SCAN_DAYS_AHEAD       = int(os.environ.get("SCAN_DAYS_AHEAD",            1))
 MAX_POSITIONS         = int(os.environ.get("MAX_POSITIONS",             20))
 
