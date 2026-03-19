@@ -28,9 +28,9 @@ def record(condition_id: str, yes_price: float, volume: float = 0, city: str = "
 
 def _price_score(yes_price: float) -> tuple[int, str]:
     """0-30 puntos según zona de precio. Retorna (pts, zone)."""
-    if 0.06 <= yes_price <= 0.09:
+    if 0.06 <= yes_price < 0.09:
         return 30, "A"   # Zona A: mayor upside
-    if 0.09 < yes_price <= 0.115:
+    if 0.09 <= yes_price <= 0.12:
         return 20, "B"   # Zona B: buen upside
     return 0, "-"
 
@@ -43,20 +43,21 @@ def _trajectory_score(condition_id: str) -> int:
     if len(history) < 2:
         return 0   # Sin historial suficiente: no asumir tendencia
 
-    recent = [p for _, p, _, _ in history[-10:]]
-    if len(recent) < 2:
+    n = min(4, len(history))
+    prices = [p for _, p, _, _ in history[-n:]]
+    if len(prices) < 2:
         return 0
 
-    changes = [recent[i] - recent[i-1] for i in range(1, len(recent))]
-    avg_change = sum(changes) / len(changes)
+    variation  = max(prices) - min(prices)
+    avg_change = (prices[-1] - prices[0]) / (len(prices) - 1)
 
-    if 0.005 <= avg_change <= 0.02:
-        return 30   # Subida gradual: ideal (0.5-2¢ por observación)
-    if -0.005 < avg_change < 0.005:
-        return 20   # Estable: bueno
-    if avg_change > 0.02:
-        return 10   # Subida rápida: puede ser tarde
-    return 0        # Bajando: no entrar
+    if avg_change > 0.02:           # subiendo rápido (>2¢/obs)
+        return 10
+    if avg_change >= 0.005:         # subiendo gradual (0.5-2¢/obs)
+        return 30
+    if variation < 0.01:            # estable (<1¢ variación total)
+        return 20
+    return 0                        # bajando o errático
 
 
 def _volume_score(volume: float) -> int:

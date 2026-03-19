@@ -66,7 +66,6 @@ REGION_MAP = {
     "london":       "europe",
     "miami":        "south",
     "paris":        "europe",
-    "toronto":      "northeast",
     "seattle":      "pacific",
     "wellington":   "southern",
     "sao-paulo":    "southern",
