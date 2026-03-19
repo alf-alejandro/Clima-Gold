@@ -174,7 +174,7 @@ class Portfolio:
                 self._close_position(pos_id, "WON", pnl,
                     resolution=f"YES resuelto ≥0.99 @ {yes_p:.4f}")
 
-            elif (no_p is not None and no_p >= 0.99) or yes_p <= 0.01:
+            elif no_p is not None and no_p >= 0.99:
                 pnl = round(pos["tokens"] * yes_p - pos["allocated"], 4)
                 self._close_position(pos_id, "LOST", pnl,
                     resolution=f"NO resuelto ≥0.99 @ {yes_p:.4f}")
