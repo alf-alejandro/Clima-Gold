@@ -159,7 +159,8 @@ class Portfolio:
           al precio actual antes de cerrar internamente.
         Retorna: [(pos_id, yes_p, tokens, yes_token_id, allocated), ...]
         """
-        tp_exits = []
+        tp_exits   = []
+        loss_exits = []
         for pos_id, pos in list(self._positions.items()):
             cid = pos.get("condition_id") or pos_id
             if cid not in price_map:
@@ -175,9 +176,11 @@ class Portfolio:
                     resolution=f"YES resuelto ≥0.99 @ {yes_p:.4f}")
 
             elif no_p is not None and no_p >= 0.99:
-                pnl = round(pos["tokens"] * yes_p - pos["allocated"], 4)
-                self._close_position(pos_id, "LOST", pnl,
-                    resolution=f"NO resuelto ≥0.99 @ {yes_p:.4f}")
+                # Intentar vender antes de cerrar para recuperar lo que quede
+                loss_exits.append((
+                    pos_id, yes_p, pos["tokens"],
+                    pos.get("yes_token_id"), pos["allocated"],
+                ))
 
             elif yes_p >= TAKE_PROFIT_YES:
                 tp_exits.append((
@@ -185,7 +188,7 @@ class Portfolio:
                     pos.get("yes_token_id"), pos["allocated"],
                 ))
 
-        return tp_exits
+        return tp_exits, loss_exits
 
     def check_fills(self):
         """

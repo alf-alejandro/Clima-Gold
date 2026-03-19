@@ -280,21 +280,24 @@ class BotThread:
             if yes_p is not None and no_p is not None:
                 price_map[cid] = (yes_p, no_p)
 
-        # 4a. Actualizar precios → recoger exits TP (con lock, sin HTTP)
-        tp_exits = []
+        # 4a. Actualizar precios → recoger exits TP y LOST (con lock, sin HTTP)
+        tp_exits   = []
+        loss_exits = []
         with portfolio.lock:
             if price_map:
-                tp_exits = portfolio.apply_price_updates(price_map)
+                tp_exits, loss_exits = portfolio.apply_price_updates(price_map)
 
-        # 4b. Venta completa al precio de mercado (FOK) para TP exits (HTTP, sin lock)
-        sells_done = []
+        # 4b. Venta al precio de mercado (FOK) para TP y LOST exits (HTTP, sin lock)
+        sells_done      = []
+        loss_sells_done = []
+
         for pos_id, yes_p, tokens, token_id, allocated in tp_exits:
             if pos_id not in portfolio.positions:
-                continue  # ya cerrado (p.ej. por price thread)
-            fill_price = yes_p  # fallback al precio detectado
+                continue
+            fill_price = yes_p
             if token_id:
                 result = clob_executor.place_market_sell_all(token_id, tokens)
-                fill_price = result.get("price", yes_p)  # precio real del fill
+                fill_price = result.get("price", yes_p)
                 log.info(
                     "TP sell detectado=%.1f¢ fill=%.1f¢ — %s — intentos=%s estado=%s",
                     yes_p * 100, fill_price * 100, pos_id,
@@ -302,16 +305,39 @@ class BotThread:
                 )
             sells_done.append((pos_id, fill_price, tokens, allocated))
 
+        for pos_id, yes_p, tokens, token_id, allocated in loss_exits:
+            if pos_id not in portfolio.positions:
+                continue
+            fill_price = yes_p
+            if token_id:
+                result = clob_executor.place_market_sell_all(token_id, tokens)
+                fill_price = result.get("price", yes_p)
+                log.info(
+                    "LOST sell fill=%.1f¢ — %s — intentos=%s estado=%s",
+                    fill_price * 100, pos_id,
+                    result.get("attempts"), result["status"],
+                )
+            loss_sells_done.append((pos_id, fill_price, tokens, allocated))
+
         # 4c. Portfolio operations (con lock)
         with portfolio.lock:
 
-            # Cerrar posiciones TP al precio capturado
+            # Cerrar posiciones TP al precio real del fill
             for pos_id, yes_p, tokens, allocated in sells_done:
                 if pos_id in portfolio.positions:
                     pnl = round(tokens * yes_p - allocated, 4)
                     portfolio._close_position(
                         pos_id, "TAKE_PROFIT", pnl,
                         resolution=f"Take profit @ YES={yes_p*100:.1f}¢",
+                    )
+
+            # Cerrar posiciones LOST vendiendo lo que se pueda recuperar
+            for pos_id, fill_price, tokens, allocated in loss_sells_done:
+                if pos_id in portfolio.positions:
+                    pnl = round(tokens * fill_price - allocated, 4)
+                    portfolio._close_position(
+                        pos_id, "LOST", pnl,
+                        resolution=f"NO resuelto — vendido @ {fill_price*100:.1f}¢",
                     )
 
             # Abrir nuevas posiciones
@@ -403,23 +429,35 @@ class BotThread:
             if yes_p is not None and no_p is not None:
                 price_map[cid] = (yes_p, no_p)
 
-        tp_exits = []
+        tp_exits   = []
+        loss_exits = []
         if price_map:
             with self.portfolio.lock:
-                tp_exits = self.portfolio.apply_price_updates(price_map)
+                tp_exits, loss_exits = self.portfolio.apply_price_updates(price_map)
 
-        # Sells al precio de mercado para TP (HTTP, sin lock)
-        sells_done = []
+        # Sells al precio de mercado para TP y LOST (HTTP, sin lock)
+        sells_done      = []
+        loss_sells_done = []
+
         for pos_id, yes_p, tokens, token_id, allocated in tp_exits:
             if pos_id not in self.portfolio.positions:
                 continue
-            fill_price = yes_p  # fallback al precio detectado
+            fill_price = yes_p
             if token_id:
                 result = clob_executor.place_market_sell_all(token_id, tokens)
-                fill_price = result.get("price", yes_p)  # precio real del fill
+                fill_price = result.get("price", yes_p)
             sells_done.append((pos_id, fill_price, tokens, allocated))
 
-        if sells_done:
+        for pos_id, yes_p, tokens, token_id, allocated in loss_exits:
+            if pos_id not in self.portfolio.positions:
+                continue
+            fill_price = yes_p
+            if token_id:
+                result = clob_executor.place_market_sell_all(token_id, tokens)
+                fill_price = result.get("price", yes_p)
+            loss_sells_done.append((pos_id, fill_price, tokens, allocated))
+
+        if sells_done or loss_sells_done:
             with self.portfolio.lock:
                 for pos_id, yes_p, tokens, allocated in sells_done:
                     if pos_id in self.portfolio.positions:
@@ -427,6 +465,13 @@ class BotThread:
                         self.portfolio._close_position(
                             pos_id, "TAKE_PROFIT", pnl,
                             resolution=f"Take profit @ YES={yes_p*100:.1f}¢",
+                        )
+                for pos_id, fill_price, tokens, allocated in loss_sells_done:
+                    if pos_id in self.portfolio.positions:
+                        pnl = round(tokens * fill_price - allocated, 4)
+                        self.portfolio._close_position(
+                            pos_id, "LOST", pnl,
+                            resolution=f"NO resuelto — vendido @ {fill_price*100:.1f}¢",
                         )
 
         # check fills (fuera del lock principal)
