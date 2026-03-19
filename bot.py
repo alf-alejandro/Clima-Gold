@@ -291,14 +291,16 @@ class BotThread:
         for pos_id, yes_p, tokens, token_id, allocated in tp_exits:
             if pos_id not in portfolio.positions:
                 continue  # ya cerrado (p.ej. por price thread)
+            fill_price = yes_p  # fallback al precio detectado
             if token_id:
                 result = clob_executor.place_market_sell_all(token_id, tokens)
+                fill_price = result.get("price", yes_p)  # precio real del fill
                 log.info(
-                    "TP sell @ %.1f¢ — %s — intentos=%s estado=%s",
-                    yes_p * 100, pos_id,
+                    "TP sell detectado=%.1f¢ fill=%.1f¢ — %s — intentos=%s estado=%s",
+                    yes_p * 100, fill_price * 100, pos_id,
                     result.get("attempts"), result["status"],
                 )
-            sells_done.append((pos_id, yes_p, tokens, allocated))
+            sells_done.append((pos_id, fill_price, tokens, allocated))
 
         # 4c. Portfolio operations (con lock)
         with portfolio.lock:
@@ -411,9 +413,11 @@ class BotThread:
         for pos_id, yes_p, tokens, token_id, allocated in tp_exits:
             if pos_id not in self.portfolio.positions:
                 continue
+            fill_price = yes_p  # fallback al precio detectado
             if token_id:
-                clob_executor.place_market_sell_all(token_id, tokens)
-            sells_done.append((pos_id, yes_p, tokens, allocated))
+                result = clob_executor.place_market_sell_all(token_id, tokens)
+                fill_price = result.get("price", yes_p)  # precio real del fill
+            sells_done.append((pos_id, fill_price, tokens, allocated))
 
         if sells_done:
             with self.portfolio.lock:
