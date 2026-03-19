@@ -99,31 +99,38 @@ def place_market_sell_all(token_id: str, size_tokens: float,
                           max_attempts: int = 20, pause: float = 0.5) -> dict:
     """
     Vende TODA la posición al precio de mercado en loop hasta completar.
-    Cada intento: FOK al best_bid − 0.01 (taker agresivo).
-    - FOK llena: éxito inmediato.
-    - FOK cancela (sin liquidez): reintenta con bid actualizado.
-    - Tras max_attempts sin éxito: deja GTC al último bid como red de seguridad.
+    - Cada intento: FOK verificando fill real (no solo orderID).
+    - Desescala 0.001 por intento si el FOK no llena.
+    - Tras max_attempts: GTC como red de seguridad.
     """
     size_tokens = round(size_tokens, 2)
     client = get_client()
+    last_price = 0.01
 
     for attempt in range(1, max_attempts + 1):
         try:
             bid = get_best_bid(token_id)
-            price = max(round((bid - 0.01) if bid else 0.05, 4), 0.01)
+            offset = round(0.01 + (attempt - 1) * 0.001, 4)  # 0.010, 0.011, 0.012...
+            price  = max(round((bid - offset) if bid else 0.05, 4), 0.01)
+            last_price = price
 
             order_args   = OrderArgs(price=price, size=size_tokens, side=SELL, token_id=token_id)
             signed_order = client.create_order(order_args)
             resp         = client.post_order(signed_order, OrderType.FOK)
 
             if "orderID" in resp:
-                return {
-                    "status":      "ok",
-                    "order_id":    resp["orderID"],
-                    "size_tokens": size_tokens,
-                    "price":       price,
-                    "attempts":    attempt,
-                }
+                # Verificar que el FOK realmente se llenó (no solo que fue aceptado)
+                time.sleep(0.3)
+                order_status = get_order_status(resp["orderID"])
+                if order_status.get("status") in ("MATCHED", "FILLED"):
+                    return {
+                        "status":      "ok",
+                        "order_id":    resp["orderID"],
+                        "size_tokens": size_tokens,
+                        "price":       price,
+                        "attempts":    attempt,
+                    }
+                # FOK cancelado — continuar desescalando
         except Exception:
             pass
 
@@ -132,7 +139,7 @@ def place_market_sell_all(token_id: str, size_tokens: float,
     # Red de seguridad: GTC al último bid conocido
     try:
         bid = get_best_bid(token_id)
-        price = max(round((bid - 0.01) if bid else 0.01, 4), 0.01)
+        price = max(round((bid - 0.01) if bid else last_price, 4), 0.01)
         order_args   = OrderArgs(price=price, size=size_tokens, side=SELL, token_id=token_id)
         signed_order = client.create_order(order_args)
         resp         = client.post_order(signed_order, OrderType.GTC)
