@@ -15,6 +15,7 @@ from config import (
     POSITION_SIZE_MIN, POSITION_SIZE_MAX,
     MIN_YES_PRICE, MAX_YES_PRICE,
     MAX_POSITIONS, MAX_REGION_EXPOSURE, REGION_MAP,
+    BUY_TIMEOUT_MINUTES,
 )
 
 load_dotenv()
@@ -196,6 +197,7 @@ class Portfolio:
         with lock:
             snapshot = list(self._positions.items())
 
+        now = datetime.now(timezone.utc)
         for pos_id, pos in snapshot:
             if pos.get("status") != "pending_buy":
                 continue
@@ -206,6 +208,26 @@ class Portfolio:
                         if pos_id in self._positions:
                             self._positions[pos_id]["status"] = "in_position"
                             db.upsert_open(pos_id, self._positions[pos_id])
+                    continue
+            except Exception:
+                pass
+
+            # Cancelar compra si lleva más de BUY_TIMEOUT_MINUTES sin llenarse
+            try:
+                opened_at = datetime.fromisoformat(pos["opened_at"])
+                if (now - opened_at).total_seconds() > BUY_TIMEOUT_MINUTES * 60:
+                    clob_executor.cancel_order(pos["buy_order_id"])
+                    with lock:
+                        if pos_id in self._positions:
+                            self._capital = round(self._capital + pos["allocated"], 4)
+                            db.set_state("capital", str(self._capital))
+                            db.delete_open(pos_id)
+                            del self._positions[pos_id]
+                    log.info(
+                        "Compra cancelada por timeout (%dm): %s [%s] @ %.1f¢",
+                        BUY_TIMEOUT_MINUTES, pos_id,
+                        pos.get("city", ""), pos.get("entry_yes", 0) * 100,
+                    )
             except Exception:
                 pass
 
