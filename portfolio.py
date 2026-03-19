@@ -290,11 +290,11 @@ class Portfolio:
 
             current_yes = pos.get("current_yes", pos["entry_yes"])
 
-            # Venta agresiva si tenemos tokens
-            if pos.get("status") in ("in_position", "pending_sell"):
-                sell_p = round(current_yes - 0.01, 4)
-                if sell_p > 0.01:
-                    clob_executor.place_sell(pos["yes_token_id"], sell_p, pos["tokens"])
+            # Venta FOK agresiva si tenemos tokens
+            if pos.get("status") in ("in_position", "pending_sell") and pos.get("yes_token_id"):
+                result = clob_executor.place_market_sell_all(pos["yes_token_id"], pos["tokens"])
+                if result.get("price"):
+                    current_yes = result["price"]
 
             pnl = round(pos["tokens"] * current_yes - pos["allocated"], 4)
             sign = "+" if pnl >= 0 else ""

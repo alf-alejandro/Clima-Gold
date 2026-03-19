@@ -366,6 +366,11 @@ class BotThread:
                 entry_yes = pos.get("entry_yes", 0.0)
                 if not (MIN_YES_PRICE <= entry_yes <= MAX_YES_PRICE):
                     current_yes = pos.get("current_yes", entry_yes)
+                    token_id = pos.get("yes_token_id")
+                    if token_id and pos.get("status") == "in_position":
+                        result = clob_executor.place_market_sell_all(token_id, pos["tokens"])
+                        if result.get("price"):
+                            current_yes = result["price"]
                     pnl = round(pos["tokens"] * current_yes - pos["allocated"], 4)
                     log.warning(
                         "Auto-liquidar %s — entrada YES=%.1f¢ fuera de rango",
