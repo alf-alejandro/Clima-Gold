@@ -206,13 +206,7 @@ class Portfolio:
                 if order.get("status") in ("FILLED", "MATCHED"):
                     with lock:
                         if pos_id in self._positions:
-                            # Usar precio y tokens reales del fill si están disponibles
-                            filled_size  = float(order.get("size_matched") or order.get("size_filled") or pos["tokens"])
-                            avg_price    = float(order.get("avg_price") or order.get("price") or pos["entry_yes"])
-                            self._positions[pos_id]["status"]    = "in_position"
-                            self._positions[pos_id]["tokens"]    = round(filled_size, 4)
-                            self._positions[pos_id]["entry_yes"] = round(avg_price, 4)
-                            self._positions[pos_id]["allocated"] = round(filled_size * avg_price, 4)
+                            self._positions[pos_id]["status"] = "in_position"
                             db.upsert_open(pos_id, self._positions[pos_id])
                     continue
             except Exception:
