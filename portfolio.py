@@ -74,6 +74,13 @@ class Portfolio:
     def can_open_position(self) -> bool:
         return len(self._positions) < MAX_POSITIONS and self._capital >= 0.50
 
+    def already_in_market(self, condition_id: str) -> bool:
+        """Evita duplicados en el mismo mercado."""
+        return any(
+            pos.get("condition_id") == condition_id
+            for pos in self._positions.values()
+        )
+
     def region_has_capacity(self, city: str) -> bool:
         """Máximo MAX_REGION_EXPOSURE (25%) del capital total por región."""
         region = REGION_MAP.get(city)

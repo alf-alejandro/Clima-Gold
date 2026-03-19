@@ -166,7 +166,10 @@ class BotThread:
 
         # IDs a saltar: abiertos + cerrados (no re-entrar mercados ya operados)
         with portfolio.lock:
-            existing_ids = set(portfolio.positions.keys())
+            existing_ids = {
+                pos.get("condition_id") for pos in portfolio.positions.values()
+                if pos.get("condition_id")
+            }
             closed_ids   = {
                 p.get("condition_id") for p in portfolio.closed_positions
                 if p.get("condition_id")
@@ -313,6 +316,9 @@ class BotThread:
             for opp in verified_opps:
                 if not portfolio.can_open_position():
                     break
+                if portfolio.already_in_market(opp["condition_id"]):
+                    log.debug("Mercado ya abierto, skip %s", opp.get("question", "")[:40])
+                    continue
                 if not portfolio.region_has_capacity(opp.get("city", "")):
                     log.debug("Región llena, skip %s", opp.get("city"))
                     continue
