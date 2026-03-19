@@ -474,10 +474,12 @@ function updateOpenPositions(positions) {
     const cur   = p.current_yes || entry;
     const pct   = Math.min(100, Math.round((cur - entry) / (tp - entry) * 100));
     const diff  = cur - entry;
+    const tempMatch = (p.question || '').match(/(\d+)\s*°C/i);
+    const tempLabel = tempMatch ? `<br><span style="color:var(--amber);font-size:11px">🌡 ${tempMatch[0]}</span>` : '';
     return `
       <tr>
         <td style="font-family:monospace;font-size:11px">${p.pos_id}</td>
-        <td>🏙 ${p.city}</td>
+        <td>🏙 ${p.city}${tempLabel}</td>
         <td>${entry.toFixed(4)}</td>
         <td class="${diff>0?'green':diff<0?'red':''}">${cur.toFixed(4)}</td>
         <td>${(p.tokens||0).toFixed(1)}</td>
@@ -503,9 +505,11 @@ function updateClosedPositions(positions) {
   }
   tb.innerHTML = positions.slice(0,20).map(p => {
     const pnl = p.pnl || 0;
+    const tempMatch = (p.question || '').match(/(\d+)\s*°C/i);
+    const tempLabel = tempMatch ? ` <span style="color:var(--amber);font-size:11px">🌡 ${tempMatch[0]}</span>` : '';
     return `
       <tr>
-        <td>🏙 ${p.city}</td>
+        <td>🏙 ${p.city}${tempLabel}</td>
         <td>${(p.entry_yes||0).toFixed(4)}</td>
         <td>${(p.exit_yes||0).toFixed(4)}</td>
         <td class="${pnlClass(pnl)}">${fmtUSD(pnl)}</td>
