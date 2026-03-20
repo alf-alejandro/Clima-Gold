@@ -307,18 +307,25 @@ class BotThread:
                 else:
                     # Fallback FOK si el maker falla
                     result2 = clob_executor.place_market_sell_all(token_id, tokens)
-                    fill_price = result2.get("price", yes_p)
-                    log.warning(
-                        "TP maker falló (%s) — FOK fallback @ %.1f¢ — %s",
-                        result.get("error"), fill_price * 100, pos_id,
-                    )
-                    with portfolio.lock:
-                        if pos_id in portfolio.positions:
-                            pnl = round(tokens * fill_price - allocated, 4)
-                            portfolio._close_position(
-                                pos_id, "TAKE_PROFIT", pnl,
-                                resolution=f"Take profit FOK @ YES={fill_price*100:.1f}¢",
-                            )
+                    fill_price = result2.get("price")  # None si no se llenó
+                    if fill_price:
+                        log.warning(
+                            "TP maker falló (%s) — FOK llenado @ %.1f¢ — %s",
+                            result.get("error"), fill_price * 100, pos_id,
+                        )
+                        with portfolio.lock:
+                            if pos_id in portfolio.positions:
+                                pnl = round(tokens * fill_price - allocated, 4)
+                                portfolio._close_position(
+                                    pos_id, "TAKE_PROFIT", pnl,
+                                    resolution=f"Take profit FOK @ YES={fill_price*100:.1f}¢",
+                                )
+                    else:
+                        # Ni maker ni FOK se llenaron — dejar posición activa sin orden
+                        log.error(
+                            "TP maker Y FOK fallaron (%s / %s) — posición %s sin vender, tokens en wallet",
+                            result.get("error"), result2.get("error"), pos_id,
+                        )
 
         for pos_id, yes_p, tokens, token_id, allocated in loss_exits:
             if pos_id not in portfolio.positions:
