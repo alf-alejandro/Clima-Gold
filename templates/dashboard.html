@@ -292,7 +292,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <div class="table-wrap table-desktop">
       <table>
         <thead><tr>
-          <th>ID</th><th>Ciudad / Temp</th><th>Entrada</th><th>Actual</th>
+          <th>ID</th><th>Ciudad / Temp</th><th>Entrada</th><th>Maker Sell</th>
           <th>Tokens</th><th>Invertido</th><th>Progreso TP</th><th>Estado</th>
         </tr></thead>
         <tbody id="openTable"><tr><td colspan="8" class="empty">Sin posiciones</td></tr></tbody>
@@ -567,7 +567,7 @@ function updateOpenPositions(positions) {
         </div>
         <div class="pos-card-grid">
           <div><div class="pos-card-label">Entrada</div><div class="pos-card-val">${(entry*100).toFixed(1)}¢</div></div>
-          <div><div class="pos-card-label">Actual</div><div class="pos-card-val ${diff>0?'green':diff<0?'red':''}">${(cur*100).toFixed(1)}¢</div></div>
+          <div><div class="pos-card-label">Maker Sell</div><div class="pos-card-val ${diff>0?'green':diff<0?'red':''}">${(cur*100).toFixed(1)}¢</div></div>
           <div><div class="pos-card-label">Invertido</div><div class="pos-card-val">${f2(p.allocated)}</div></div>
         </div>
         <div class="pos-card-footer">

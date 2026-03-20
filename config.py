@@ -19,7 +19,9 @@ MIN_YES_PRICE   = WEEKDAY_YES_MIN
 MAX_YES_PRICE   = WEEKDAY_YES_MAX
 
 # ── Take profit ───────────────────────────────────────────────────────────────
-TAKE_PROFIT_YES = float(os.environ.get("TAKE_PROFIT_YES", 0.15))
+TAKE_PROFIT_YES      = float(os.environ.get("TAKE_PROFIT_YES",      0.15))
+# Si el precio cae >30% desde cuando se activó el TP, salir por FOK inmediato
+MAKER_SELL_STOP_LOSS = float(os.environ.get("MAKER_SELL_STOP_LOSS", 0.30))
 
 # ── Volume thresholds para scoring ────────────────────────────────────────────
 SCORE_VOLUME_HIGH = float(os.environ.get("SCORE_VOLUME_HIGH", 500))

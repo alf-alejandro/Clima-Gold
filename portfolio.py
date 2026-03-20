@@ -15,7 +15,7 @@ from config import (
     POSITION_SIZE_MIN, POSITION_SIZE_MAX,
     MIN_YES_PRICE, MAX_YES_PRICE,
     MAX_POSITIONS, MAX_REGION_EXPOSURE, REGION_MAP,
-    BUY_TIMEOUT_MINUTES,
+    BUY_TIMEOUT_MINUTES, MAKER_SELL_STOP_LOSS,
 )
 
 load_dotenv()
@@ -183,27 +183,103 @@ class Portfolio:
                 ))
 
             elif yes_p >= TAKE_PROFIT_YES:
-                tp_exits.append((
-                    pos_id, yes_p, pos["tokens"],
-                    pos.get("yes_token_id"), pos["allocated"],
-                ))
+                if pos.get("status") != "pending_sell":  # no duplicar orden maker
+                    tp_exits.append((
+                        pos_id, yes_p, pos["tokens"],
+                        pos.get("yes_token_id"), pos["allocated"],
+                    ))
 
         return tp_exits, loss_exits
 
+    def set_pending_sell(self, pos_id: str, sell_order_id: str, maker_price: float):
+        """Marca posición como pending_sell con la orden maker GTC colocada."""
+        pos = self._positions.get(pos_id)
+        if not pos:
+            return
+        pos["sell_order_id"]     = sell_order_id
+        pos["maker_entry_price"] = maker_price   # precio cuando se activó el TP
+        pos["status"]            = "pending_sell"
+        db.upsert_open(pos_id, pos)
+
     def check_fills(self):
         """
-        Monitorea fills de órdenes BUY pendientes.
+        Monitorea fills de órdenes BUY y SELL pendientes.
         HTTP fuera del lock para no bloquear el scan loop.
-        El take-profit se ejecuta al precio de mercado cuando el monitor
-        detecta YES ≥ TAKE_PROFIT_YES (no con orden límite fija).
         """
         with lock:
             snapshot = list(self._positions.items())
 
         now = datetime.now(timezone.utc)
         for pos_id, pos in snapshot:
-            if pos.get("status") != "pending_buy":
+            status = pos.get("status")
+
+            # ── Monitorear orden de venta maker (pending_sell) ────────────────
+            if status == "pending_sell" and pos.get("sell_order_id"):
+                try:
+                    order = clob_executor.get_order_status(pos["sell_order_id"])
+                    order_status = order.get("status", "")
+
+                    if order_status in ("FILLED", "MATCHED"):
+                        # Orden llenada — cerrar posición con precio real del fill
+                        fill_price = float(order.get("price") or pos.get("current_yes", pos["entry_yes"]))
+                        with lock:
+                            if pos_id in self._positions:
+                                p = self._positions[pos_id]
+                                pnl = round(p["tokens"] * fill_price - p["allocated"], 4)
+                                self._close_position(
+                                    pos_id, "TAKE_PROFIT", pnl,
+                                    resolution=f"Maker sell llenado @ {fill_price*100:.1f}¢",
+                                )
+                        log.info("Maker sell llenado @ %.1f¢ — %s", fill_price * 100, pos_id)
+                    else:
+                        # Aún sin llenar — cancelar y evaluar stop-loss
+                        clob_executor.cancel_order(pos["sell_order_id"])
+
+                        maker_entry   = pos.get("maker_entry_price") or pos.get("current_yes", pos["entry_yes"])
+                        current_price = pos.get("current_yes", maker_entry)
+                        stop_threshold = round(maker_entry * (1 - MAKER_SELL_STOP_LOSS), 4)
+
+                        if current_price < stop_threshold:
+                            # Stop-loss: precio cayó >30% desde el TP → FOK inmediato
+                            result = clob_executor.place_market_sell_all(
+                                pos["yes_token_id"], pos["tokens"]
+                            )
+                            fill_price = result.get("price", current_price)
+                            with lock:
+                                if pos_id in self._positions:
+                                    p   = self._positions[pos_id]
+                                    pnl = round(p["tokens"] * fill_price - p["allocated"], 4)
+                                    self._close_position(
+                                        pos_id, "TAKE_PROFIT", pnl,
+                                        resolution=f"Maker stop-loss FOK @ {fill_price*100:.1f}¢ "
+                                                   f"(TP entrada={maker_entry*100:.1f}¢)",
+                                    )
+                            log.warning(
+                                "Maker stop-loss FOK @ %.1f¢ (TP entrada=%.1f¢, umbral=%.1f¢) — %s",
+                                fill_price * 100, maker_entry * 100, stop_threshold * 100, pos_id,
+                            )
+                        else:
+                            # Sin stop-loss — re-colocar maker al nuevo best_ask - 0.01
+                            new_result = clob_executor.place_maker_sell(
+                                pos["yes_token_id"], pos["tokens"]
+                            )
+                            if new_result["status"] == "ok":
+                                with lock:
+                                    if pos_id in self._positions:
+                                        self._positions[pos_id]["sell_order_id"] = new_result["order_id"]
+                                        db.upsert_open(pos_id, self._positions[pos_id])
+                                log.info(
+                                    "Maker sell actualizado @ %.1f¢ — %s",
+                                    new_result["price"] * 100, pos_id,
+                                )
+                except Exception:
+                    pass
                 continue
+
+            if status != "pending_buy":
+                continue
+
+            # ── Monitorear orden de compra (pending_buy) ──────────────────────
             try:
                 order = clob_executor.get_order_status(pos["buy_order_id"])
                 if order.get("status") in ("FILLED", "MATCHED"):

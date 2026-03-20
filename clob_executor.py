@@ -181,6 +181,23 @@ def place_buy(token_id: str, price: float, amount_usdc: float) -> dict:
         return {"status": "error", "error": str(e)}
 
 
+def place_maker_sell(token_id: str, size_tokens: float) -> dict:
+    """GTC SELL al best_ask - 0.01 — maker, primero en el order book pero más barato"""
+    try:
+        client = get_client()
+        ask = get_best_ask(token_id)
+        price = max(round((ask - 0.01) if ask else 0.10, 4), 0.01)
+        size_tokens = round(size_tokens, 2)
+        order_args   = OrderArgs(price=price, size=size_tokens, side=SELL, token_id=token_id)
+        signed_order = client.create_order(order_args)
+        resp = client.post_order(signed_order, OrderType.GTC)
+        if "orderID" not in resp:
+            return {"status": "error", "error": str(resp)}
+        return {"status": "ok", "order_id": resp["orderID"], "price": price, "size_tokens": size_tokens}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
 def place_sell(token_id: str, price: float, size_tokens: float) -> dict:
     """Coloca una orden GTC de venta (SELL) de YES tokens"""
     try:
