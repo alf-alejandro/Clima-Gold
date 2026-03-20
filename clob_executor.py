@@ -56,7 +56,6 @@ def ensure_allowances() -> dict:
         from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
         client = get_client()
         client.update_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.COLLATERAL))
-        client.update_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.CONDITIONAL))
         return {"status": "ok"}
     except Exception as e:
         return {"status": "error", "error": str(e)}
