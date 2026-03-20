@@ -44,6 +44,24 @@ def reset_client():
         _initialized = False
 
 
+# ─── Allowances ───────────────────────────────────────────────────────────────
+
+def ensure_allowances() -> dict:
+    """
+    Aprueba el contrato CLOB para mover USDC y YES tokens (conditional).
+    Debe llamarse al inicio del bot. Sin esto, los SELL de YES tokens fallan
+    con 'not enough balance / allowance'.
+    """
+    try:
+        from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
+        client = get_client()
+        client.update_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.COLLATERAL))
+        client.update_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.CONDITIONAL))
+        return {"status": "ok"}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
 # ─── Balance ──────────────────────────────────────────────────────────────────
 
 def get_wallet_info() -> dict:

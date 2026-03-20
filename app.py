@@ -18,6 +18,12 @@ from bot import BotThread
 load_dotenv()
 db.init_db()
 
+# Aprobar CLOB para mover USDC y YES tokens — necesario para poder vender
+_allowance = clob_executor.ensure_allowances()
+if _allowance["status"] != "ok":
+    import logging
+    logging.getLogger(__name__).warning("ensure_allowances falló: %s", _allowance.get("error"))
+
 app       = Flask(__name__)
 portfolio = Portfolio()
 bot       = BotThread(portfolio)
