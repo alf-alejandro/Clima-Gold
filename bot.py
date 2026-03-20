@@ -19,7 +19,7 @@ from config import (
     WEEKDAY_YES_MIN, WEEKDAY_YES_MAX, WEEKDAY_MIN_SCORE,
     WEEKEND_YES_MIN, WEEKEND_YES_MAX, WEEKEND_MIN_SCORE,
 )
-from portfolio import Portfolio, calc_position_size
+from portfolio import Portfolio
 
 log = logging.getLogger(__name__)
 
@@ -356,7 +356,7 @@ class BotThread:
                 if not portfolio.region_has_capacity(opp.get("city", "")):
                     log.debug("Región llena, skip %s", opp.get("city"))
                     continue
-                amount = calc_position_size(portfolio.capital_disponible, opp["yes_price"])
+                amount = 1.10
                 if amount >= 0.50:
                     pos = portfolio.open_position(opp, amount)
                     if pos:
