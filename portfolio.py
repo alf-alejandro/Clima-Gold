@@ -244,20 +244,35 @@ class Portfolio:
                             result = clob_executor.place_market_sell_all(
                                 pos["yes_token_id"], pos["tokens"]
                             )
-                            fill_price = result.get("price", current_price)
-                            with lock:
-                                if pos_id in self._positions:
-                                    p   = self._positions[pos_id]
-                                    pnl = round(p["tokens"] * fill_price - p["allocated"], 4)
-                                    self._close_position(
-                                        pos_id, "TAKE_PROFIT", pnl,
-                                        resolution=f"Maker stop-loss FOK @ {fill_price*100:.1f}¢ "
-                                                   f"(TP entrada={maker_entry*100:.1f}¢)",
-                                    )
-                            log.warning(
-                                "Maker stop-loss FOK @ %.1f¢ (TP entrada=%.1f¢, umbral=%.1f¢) — %s",
-                                fill_price * 100, maker_entry * 100, stop_threshold * 100, pos_id,
-                            )
+                            fill_price = result.get("price")
+                            if not fill_price:
+                                # FOK sin fill — re-colocar maker al precio actual
+                                log.warning(
+                                    "Stop-loss FOK sin fill (%.1f¢ umbral) — reintentando maker @ %.1f¢ — %s",
+                                    stop_threshold * 100, current_price * 100, pos_id,
+                                )
+                                new_result = clob_executor.place_maker_sell(
+                                    pos["yes_token_id"], pos["tokens"]
+                                )
+                                if new_result["status"] == "ok":
+                                    with lock:
+                                        if pos_id in self._positions:
+                                            self._positions[pos_id]["sell_order_id"] = new_result["order_id"]
+                                            db.upsert_open(pos_id, self._positions[pos_id])
+                            else:
+                                with lock:
+                                    if pos_id in self._positions:
+                                        p   = self._positions[pos_id]
+                                        pnl = round(p["tokens"] * fill_price - p["allocated"], 4)
+                                        self._close_position(
+                                            pos_id, "TAKE_PROFIT", pnl,
+                                            resolution=f"Maker stop-loss FOK @ {fill_price*100:.1f}¢ "
+                                                       f"(TP entrada={maker_entry*100:.1f}¢)",
+                                        )
+                                log.warning(
+                                    "Maker stop-loss FOK @ %.1f¢ (TP entrada=%.1f¢, umbral=%.1f¢) — %s",
+                                    fill_price * 100, maker_entry * 100, stop_threshold * 100, pos_id,
+                                )
                         else:
                             # Sin stop-loss — re-colocar maker al nuevo best_ask - 0.01
                             new_result = clob_executor.place_maker_sell(
@@ -371,6 +386,16 @@ class Portfolio:
                 result = clob_executor.place_market_sell_all(pos["yes_token_id"], pos["tokens"])
                 if result.get("price"):
                     current_yes = result["price"]
+                elif result.get("status") == "error" or not result.get("price"):
+                    # FOK no se llenó — dejar posición activa, solo limpiar orden maker
+                    pos["sell_order_id"] = None
+                    pos["status"]        = "in_position"
+                    db.upsert_open(pos_id, pos)
+                    log.warning(
+                        "Force_close FOK sin fill [%s] %s — posición mantenida",
+                        city, pos_id,
+                    )
+                    continue
 
             pnl = round(pos["tokens"] * current_yes - pos["allocated"], 4)
             sign = "+" if pnl >= 0 else ""
