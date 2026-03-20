@@ -225,6 +225,7 @@ class Portfolio:
                         with lock:
                             if pos_id in self._positions:
                                 p = self._positions[pos_id]
+                                p["current_yes"] = fill_price  # capital correcto
                                 pnl = round(p["tokens"] * fill_price - p["allocated"], 4)
                                 self._close_position(
                                     pos_id, "TAKE_PROFIT", pnl,
@@ -262,7 +263,8 @@ class Portfolio:
                             else:
                                 with lock:
                                     if pos_id in self._positions:
-                                        p   = self._positions[pos_id]
+                                        p = self._positions[pos_id]
+                                        p["current_yes"] = fill_price  # capital correcto
                                         pnl = round(p["tokens"] * fill_price - p["allocated"], 4)
                                         self._close_position(
                                             pos_id, "TAKE_PROFIT", pnl,

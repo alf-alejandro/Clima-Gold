@@ -315,6 +315,7 @@ class BotThread:
                         )
                         with portfolio.lock:
                             if pos_id in portfolio.positions:
+                                portfolio.positions[pos_id]["current_yes"] = fill_price  # capital correcto
                                 pnl = round(tokens * fill_price - allocated, 4)
                                 portfolio._close_position(
                                     pos_id, "TAKE_PROFIT", pnl,
@@ -347,6 +348,7 @@ class BotThread:
             # Cerrar posiciones LOST vendiendo lo que se pueda recuperar
             for pos_id, fill_price, tokens, allocated in loss_sells_done:
                 if pos_id in portfolio.positions:
+                    portfolio.positions[pos_id]["current_yes"] = fill_price  # capital correcto
                     pnl = round(tokens * fill_price - allocated, 4)
                     portfolio._close_position(
                         pos_id, "LOST", pnl,
