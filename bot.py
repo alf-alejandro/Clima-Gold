@@ -272,7 +272,7 @@ class BotThread:
                 if yes_p is not None and yes_p > 0.50:
                     yes_p, no_p = None, None
                 if yes_p is not None:
-                    yes_p = max(round(yes_p - 0.01, 4), 0.01)  # maker sell price
+                    yes_p = max(round(yes_p * 0.90, 4), 0.01)  # maker sell price (-10%)
                 else:
                     clob_fail_pos += 1
                     if clob_fail_pos >= 2:
@@ -439,7 +439,7 @@ class BotThread:
                     yes_p, no_p = None, None
                     clob_failures += 1
                 elif yes_p is not None:
-                    yes_p = max(round(yes_p - 0.01, 4), 0.01)  # maker sell price
+                    yes_p = max(round(yes_p * 0.90, 4), 0.01)  # maker sell price (-10%)
                     clob_failures = 0
                 else:
                     clob_failures += 1

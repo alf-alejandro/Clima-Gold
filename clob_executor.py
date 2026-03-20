@@ -203,7 +203,7 @@ def place_maker_sell(token_id: str, size_tokens: float) -> dict:
     try:
         client = get_client()
         ask = get_best_ask(token_id)
-        price = max(round((ask - 0.01) if ask else 0.10, 4), 0.01)
+        price = max(round(ask * 0.90 if ask else 0.10, 4), 0.01)
         size_tokens = round(size_tokens, 2)
         order_args   = OrderArgs(price=price, size=size_tokens, side=SELL, token_id=token_id)
         signed_order = client.create_order(order_args)
