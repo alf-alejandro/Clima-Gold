@@ -60,7 +60,7 @@ CITY_WINDOWS = {
 
 # ── Límites de exposición regional ───────────────────────────────────────────
 MAX_REGION_EXPOSURE  = float(os.environ.get("MAX_REGION_EXPOSURE",  0.25))
-BUY_TIMEOUT_MINUTES  = int(os.environ.get("BUY_TIMEOUT_MINUTES",   2))
+BUY_TIMEOUT_MINUTES  = int(os.environ.get("BUY_TIMEOUT_MINUTES",   5))
 
 REGION_MAP = {
     "buenos-aires": "southern",
