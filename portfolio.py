@@ -388,16 +388,15 @@ class Portfolio:
                 result = clob_executor.place_market_sell_all(pos["yes_token_id"], pos["tokens"])
                 if result.get("price"):
                     current_yes = result["price"]
-                elif result.get("status") == "error" or not result.get("price"):
-                    # FOK no se llenó — dejar posición activa, solo limpiar orden maker
-                    pos["sell_order_id"] = None
-                    pos["status"]        = "in_position"
-                    db.upsert_open(pos_id, pos)
+                else:
+                    # FOK no se llenó — usar el mejor bid conocido como precio de salida
+                    bid = clob_executor.get_best_bid(pos["yes_token_id"])
+                    if bid:
+                        current_yes = bid
                     log.warning(
-                        "Force_close FOK sin fill [%s] %s — posición mantenida",
-                        city, pos_id,
+                        "Force_close FOK sin fill [%s] %s — cerrando al bid=%.1f¢",
+                        city, pos_id, current_yes * 100,
                     )
-                    continue
 
             pnl = round(pos["tokens"] * current_yes - pos["allocated"], 4)
             sign = "+" if pnl >= 0 else ""
