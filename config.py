@@ -22,6 +22,8 @@ MAX_YES_PRICE   = WEEKDAY_YES_MAX
 TAKE_PROFIT_YES      = float(os.environ.get("TAKE_PROFIT_YES",      0.15))
 # Si el precio cae >30% desde cuando se activó el TP, salir por FOK inmediato
 MAKER_SELL_STOP_LOSS = float(os.environ.get("MAKER_SELL_STOP_LOSS", 0.30))
+# Si el BID llega al 95% del precio maker → vender como taker (FOK inmediato)
+TAKER_BID_THRESHOLD  = float(os.environ.get("TAKER_BID_THRESHOLD",  0.95))
 
 # ── Volume thresholds para scoring ────────────────────────────────────────────
 SCORE_VOLUME_HIGH = float(os.environ.get("SCORE_VOLUME_HIGH", 500))

@@ -15,7 +15,7 @@ from config import (
     POSITION_SIZE_MIN, POSITION_SIZE_MAX,
     MIN_YES_PRICE, MAX_YES_PRICE,
     MAX_POSITIONS, MAX_REGION_EXPOSURE, REGION_MAP,
-    BUY_TIMEOUT_MINUTES, MAKER_SELL_STOP_LOSS,
+    BUY_TIMEOUT_MINUTES, MAKER_SELL_STOP_LOSS, TAKER_BID_THRESHOLD,
 )
 
 load_dotenv()
@@ -233,12 +233,44 @@ class Portfolio:
                                 )
                         log.info("Maker sell llenado @ %.1f¢ — %s", fill_price * 100, pos_id)
                     else:
-                        # Aún sin llenar — cancelar y evaluar stop-loss
+                        # Aún sin llenar — cancelar y evaluar opciones
                         clob_executor.cancel_order(pos["sell_order_id"])
 
                         maker_entry   = pos.get("maker_entry_price") or pos.get("current_yes", pos["entry_yes"])
                         current_price = pos.get("current_yes", maker_entry)
+                        current_bid   = pos.get("current_bid", 0)
                         stop_threshold = round(maker_entry * (1 - MAKER_SELL_STOP_LOSS), 4)
+
+                        # BID cercano al precio maker → vender como taker (FOK inmediato)
+                        if current_bid >= maker_entry * TAKER_BID_THRESHOLD:
+                            result = clob_executor.place_market_sell_all(
+                                pos["yes_token_id"], pos["tokens"]
+                            )
+                            fill_price = result.get("price")
+                            if fill_price:
+                                with lock:
+                                    if pos_id in self._positions:
+                                        p = self._positions[pos_id]
+                                        p["current_yes"] = fill_price
+                                        pnl = round(p["tokens"] * fill_price - p["allocated"], 4)
+                                        self._close_position(
+                                            pos_id, "TAKE_PROFIT", pnl,
+                                            resolution=f"Taker sell (BID≈maker) @ {fill_price*100:.1f}¢",
+                                        )
+                                log.info(
+                                    "Taker sell BID=%.1f¢ ≥ maker=%.1f¢ × %.0f%% — %s",
+                                    current_bid * 100, maker_entry * 100,
+                                    TAKER_BID_THRESHOLD * 100, pos_id,
+                                )
+                            else:
+                                # FOK no llenó — re-colocar maker
+                                new_result = clob_executor.place_maker_sell(pos["yes_token_id"], pos["tokens"])
+                                if new_result["status"] == "ok":
+                                    with lock:
+                                        if pos_id in self._positions:
+                                            self._positions[pos_id]["sell_order_id"] = new_result["order_id"]
+                                            db.upsert_open(pos_id, self._positions[pos_id])
+                            continue
 
                         if current_price < stop_threshold:
                             # Stop-loss: precio cayó >30% desde el TP → FOK inmediato
