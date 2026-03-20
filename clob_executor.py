@@ -164,7 +164,7 @@ def place_market_sell_all(token_id: str, size_tokens: float,
             "status":      "gtc_fallback",
             "order_id":    resp.get("orderID"),
             "size_tokens": size_tokens,
-            "price":       price,
+            "gtc_price":   price,    # precio de la orden, NO fill confirmado
             "attempts":    max_attempts,
         }
     except Exception as e:

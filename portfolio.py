@@ -419,14 +419,25 @@ class Portfolio:
             if pos.get("status") in ("in_position", "pending_sell") and pos.get("yes_token_id"):
                 result = clob_executor.place_market_sell_all(pos["yes_token_id"], pos["tokens"])
                 if result.get("price"):
+                    # FOK confirmado — cerrar con precio real
                     current_yes = result["price"]
+                elif result.get("status") == "gtc_fallback" and result.get("order_id"):
+                    # GTC colocado pero no confirmado — dejar check_fills monitorearlo
+                    pos["sell_order_id"] = result["order_id"]
+                    pos["status"]        = "pending_sell"
+                    db.upsert_open(pos_id, pos)
+                    log.warning(
+                        "Force_close GTC fallback [%s] %s @ %.1f¢ — monitoreando fill",
+                        city, pos_id, result.get("gtc_price", 0) * 100,
+                    )
+                    continue
                 else:
-                    # FOK no se llenó — usar el mejor bid conocido como precio de salida
+                    # Sin fill y sin GTC — cerrar al mejor bid conocido
                     bid = clob_executor.get_best_bid(pos["yes_token_id"])
                     if bid:
                         current_yes = bid
                     log.warning(
-                        "Force_close FOK sin fill [%s] %s — cerrando al bid=%.1f¢",
+                        "Force_close sin fill [%s] %s — cerrando al bid=%.1f¢",
                         city, pos_id, current_yes * 100,
                     )
 
