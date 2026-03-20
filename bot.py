@@ -12,7 +12,7 @@ import market_scorer
 import clob_executor
 from scanner import scan_opportunities, fetch_yes_price_clob, fetch_live_prices
 from config import (
-    MONITOR_INTERVAL, PRICE_UPDATE_INTERVAL,
+    MONITOR_INTERVAL, PRICE_UPDATE_INTERVAL, SELL_RENEWAL_INTERVAL,
     MIN_YES_PRICE, MAX_YES_PRICE,
     MAX_POSITIONS, OBSERVER_UTC_OFFSET, CITY_WINDOWS,
     WEEKEND_ENABLED,
@@ -129,11 +129,19 @@ class BotThread:
     def _run_prices(self):
         log.info("Price updater iniciado.")
         while not self._stop_event.is_set():
-            self._stop_event.wait(PRICE_UPDATE_INTERVAL)
+            # Intervalo corto si hay pending_sell para renovar maker rápido
+            with self.portfolio.lock:
+                has_pending = any(
+                    p.get("status") == "pending_sell"
+                    for p in self.portfolio.positions.values()
+                )
+            interval = SELL_RENEWAL_INTERVAL if has_pending else PRICE_UPDATE_INTERVAL
+            self._stop_event.wait(interval)
             if self._stop_event.is_set():
                 break
             try:
                 self._refresh_prices()
+                self.portfolio.check_fills()
             except Exception:
                 log.exception("Error actualizando precios")
         log.info("Price updater detenido.")
@@ -505,8 +513,7 @@ class BotThread:
                             resolution=f"NO resuelto — vendido @ {fill_price*100:.1f}¢",
                         )
 
-        # check fills (fuera del lock principal)
-        self.portfolio.check_fills()
+        # check_fills se ejecuta en _run_prices (intervalo dinámico)
 
     # ── Capital sync horario ──────────────────────────────────────────────────
 
